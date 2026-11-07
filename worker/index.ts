@@ -1,12 +1,21 @@
 /**
  * Worker de la invitación.
  *  Público:  GET  /api/invitacion?slug=&de=   POST /api/visita   POST /api/rsvp
- *            GET  /evento.ics                  GET  /media/logo/:id
- *  Panel:    /api/admin/*  (requiere sesión; contraseña en el secreto ADMIN_PASSWORD)
+ *            POST /api/entradas {carne}       GET  /evento.ics   GET /media/logo/:id
+ *  Puerta:   /api/acceso/*  (PIN definido en el panel)
+ *  Panel:    /api/admin/*   (contraseña en el secreto ADMIN_PASSWORD)
  * Todo lo demás lo sirven los Static Assets (SPA).
  */
+import { agendaPorDefecto, type BloqueAgenda } from '../src/data/agenda';
 import { eventoPorDefecto, type Evento } from '../src/data/evento';
-import { CAMPOS_EDITABLES, type DatosInvitacion, type EstadoRsvp, type Logo } from '../src/data/tipos';
+import {
+  CAMPOS_EDITABLES,
+  type DatosInvitacion,
+  type EntradaPublica,
+  type EstadoRsvp,
+  type Logo,
+  type ResultadoAcceso,
+} from '../src/data/tipos';
 import { crearIcs } from '../src/utils/calendar';
 import { slugify } from '../src/utils/slugs';
 
@@ -54,25 +63,59 @@ function requerido(v: unknown, max: number, campo: string): string {
   return t;
 }
 
-function entero(v: unknown, campo: string): number | null {
+function entero(v: unknown, campo: string, max = 9999): number | null {
   if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 0 || n > 9999) throw new HttpError(400, `${campo}: número inválido`);
+  if (!Number.isInteger(n) || n < 0 || n > max) throw new HttpError(400, `${campo}: número inválido`);
   return n;
 }
 
-const sufijo = () => {
-  const b = crypto.getRandomValues(new Uint8Array(4));
-  return Array.from(b, (x) => 'abcdefghjkmnpqrstuvwxyz23456789'[x % 31]).join('');
+const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O ni 1/I/L
+const aleatorio = (n: number, alfabeto = ALFABETO) =>
+  Array.from(crypto.getRandomValues(new Uint8Array(n)), (x) => alfabeto[x % alfabeto.length]).join('');
+const sufijo = () => aleatorio(4, 'abcdefghjkmnpqrstuvwxyz23456789');
+
+const AHORA = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
+/** Carné sin espacios, guiones ni puntos. */
+const normalizarCarne = (v: unknown) => (typeof v === 'string' ? v.replace(/[\s.\-]/g, '').toUpperCase() : '');
+/** Código QR o manual: acepta la URL completa, con o sin guion. */
+const normalizarCodigo = (v: unknown) => {
+  const s = typeof v === 'string' ? v : '';
+  const c = s.match(/[?&]c=([A-Za-z0-9-]+)/)?.[1] ?? s;
+  return c.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 16);
 };
 
-// ─────────────────────────── Datos del evento ───────────────────────────
+/** Límite genérico por IP (acceso al panel, PIN de puerta, consultas de carné). */
+async function limitar(db: D1Database, clave: string, max: number) {
+  const ventana = Date.now() - 15 * 60 * 1000;
+  const { n } = (await db.prepare('SELECT COUNT(*) AS n FROM login_intentos WHERE ip = ? AND ts > ?').bind(clave, ventana).first<{ n: number }>())!;
+  if (n >= max) throw new HttpError(429, 'Demasiados intentos. Espere 15 minutos.');
+}
+const registrarIntento = (db: D1Database, clave: string) =>
+  db.batch([
+    db.prepare('INSERT INTO login_intentos (ip, ts) VALUES (?, ?)').bind(clave, Date.now()),
+    db.prepare('DELETE FROM login_intentos WHERE ts < ?').bind(Date.now() - 24 * 60 * 60 * 1000),
+  ]);
+
+// ─────────────────────────── Configuración ───────────────────────────
+
+async function leerConfig<T>(db: D1Database, clave: string): Promise<T | null> {
+  const fila = await db.prepare('SELECT valor FROM config WHERE clave = ?').bind(clave).first<{ valor: string }>();
+  return fila ? (JSON.parse(fila.valor) as T) : null;
+}
+
+const guardarConfig = (db: D1Database, clave: string, valor: unknown) =>
+  db
+    .prepare('INSERT INTO config (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor')
+    .bind(clave, JSON.stringify(valor))
+    .run();
 
 async function leerEvento(db: D1Database): Promise<Evento> {
-  const fila = await db.prepare("SELECT valor FROM config WHERE clave = 'evento'").first<{ valor: string }>();
-  const guardado = fila ? (JSON.parse(fila.valor) as Partial<Evento>) : {};
+  const guardado = (await leerConfig<Partial<Evento>>(db, 'evento')) ?? {};
   return { ...eventoPorDefecto, ...guardado, mensaje: { ...eventoPorDefecto.mensaje, ...guardado.mensaje } };
 }
+
+const leerAgenda = async (db: D1Database) => (await leerConfig<BloqueAgenda[]>(db, 'agenda')) ?? agendaPorDefecto;
 
 function validarEvento(b: Record<string, unknown>) {
   const r: Record<string, unknown> = {};
@@ -96,7 +139,7 @@ function validarEvento(b: Record<string, unknown>) {
         break;
       case 'horaFin':
         if (v && (typeof v !== 'string' || !hora.test(v))) throw new HttpError(400, 'Hora de finalización inválida');
-        r[k] = v || null; // null borra el valor guardado
+        r[k] = v || null;
         break;
       case 'lugar':
       case 'ciudad':
@@ -112,6 +155,7 @@ function validarEvento(b: Record<string, unknown>) {
         break;
       }
       case 'rsvpActivo':
+      case 'entradasActivas':
         r[k] = v === true;
         break;
       case 'mensaje': {
@@ -129,6 +173,54 @@ function validarEvento(b: Record<string, unknown>) {
   return r;
 }
 
+/** Valida la agenda completa enviada desde el panel. */
+function validarAgenda(v: unknown): BloqueAgenda[] {
+  if (!Array.isArray(v) || v.length > 6) throw new HttpError(400, 'Agenda inválida');
+  const hora = (h: unknown, campo: string) => {
+    if (h === undefined || h === null || h === '') return undefined;
+    if (typeof h !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(h)) throw new HttpError(400, `${campo}: hora inválida`);
+    return h;
+  };
+  const horario = (o: Record<string, unknown> | undefined, campo: string) => {
+    const inicio = hora(o?.inicio, campo);
+    if (!inicio) return undefined;
+    const fin = hora(o?.fin, campo);
+    return fin ? { inicio, fin } : { inicio };
+  };
+  return v.map((b: Record<string, unknown>, i) => {
+    const titulo = requerido(b?.titulo, 80, `Sección ${i + 1}`);
+    const items = Array.isArray(b.items) ? b.items : [];
+    if (items.length > 60) throw new HttpError(400, `${titulo}: demasiados puntos`);
+    return {
+      id: slugify(String(b.id ?? titulo)).slice(0, 40) || `bloque-${i + 1}`,
+      titulo,
+      leyenda: texto(b.leyenda, 120, 'Leyenda') ?? undefined,
+      items: items.map((it: Record<string, unknown>, j) => {
+        const campo = `${titulo}, punto ${j + 1}`;
+        const part = Array.isArray(it.participaciones) ? it.participaciones : [];
+        const sub = Array.isArray(it.subitems) ? it.subitems : [];
+        return {
+          hora: horario(it.hora as Record<string, unknown>, campo),
+          titulo: requerido(it.titulo, 160, campo),
+          responsable: texto(it.responsable, 160, `${campo}: responsable`) ?? undefined,
+          participaciones: part.length
+            ? part.slice(0, 20).map((p: Record<string, unknown>) => ({
+                nombre: requerido(p?.nombre, 120, `${campo}: participante`),
+                tema: texto(p?.tema, 160, `${campo}: tema`) ?? '',
+              }))
+            : undefined,
+          subitems: sub.length
+            ? sub.slice(0, 20).map((s: Record<string, unknown>) => ({
+                titulo: requerido(s?.titulo, 120, `${campo}: subpunto`),
+                hora: horario(s?.hora as Record<string, unknown>, campo),
+              }))
+            : undefined,
+        };
+      }),
+    };
+  });
+}
+
 async function leerLogos(db: D1Database): Promise<Logo[]> {
   const { results } = await db
     .prepare('SELECT id, alt, ancho, alto, actualizado FROM logos ORDER BY orden, id')
@@ -142,11 +234,16 @@ async function leerLogos(db: D1Database): Promise<Logo[]> {
   }));
 }
 
-// ─────────────────────────── Sesión del panel ───────────────────────────
+// ─────────────────────────── Sesiones (panel y puerta) ───────────────────────────
+
+type Rol = 'adm' | 'pta';
+const RUTA_COOKIE: Record<Rol, string> = { adm: '/api/admin', pta: '/api/acceso' };
+const DURACION: Record<Rol, number> = { adm: 12 * 60 * 60, pta: 16 * 60 * 60 };
 
 const enc = new TextEncoder();
 const b64url = (buf: ArrayBuffer) =>
   btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const sha256 = async (s: string) => b64url(await crypto.subtle.digest('SHA-256', enc.encode(s)));
 
 async function firmar(secreto: string, dato: string) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secreto), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -158,43 +255,156 @@ async function iguales(a: string, b: string) {
   return crypto.subtle.timingSafeEqual(ha, hb);
 }
 
-const DURACION_SESION = 12 * 60 * 60; // 12 h
-
-async function crearSesion(secreto: string) {
-  const exp = String(Math.floor(Date.now() / 1000) + DURACION_SESION);
-  return `${exp}.${await firmar(secreto, `sesion:${exp}`)}`;
+/** `version` permite invalidar todas las sesiones de puerta al cambiar el PIN. */
+async function crearSesion(secreto: string, rol: Rol, version = '') {
+  const exp = String(Math.floor(Date.now() / 1000) + DURACION[rol]);
+  return `${exp}.${await firmar(secreto, `${rol}:${version}:${exp}`)}`;
 }
 
-async function sesionValida(req: Request, secreto: string) {
-  const m = req.headers.get('Cookie')?.match(/(?:^|;\s*)adm=([^;]+)/);
+async function sesionValida(req: Request, secreto: string, rol: Rol, version = '') {
+  const m = req.headers.get('Cookie')?.match(new RegExp(`(?:^|;\\s*)${rol}=([^;]+)`));
   if (!m) return false;
   const [exp, firma] = m[1].split('.');
   if (!exp || !firma || Number(exp) < Date.now() / 1000) return false;
-  return iguales(firma, await firmar(secreto, `sesion:${exp}`));
+  return iguales(firma, await firmar(secreto, `${rol}:${version}:${exp}`));
 }
 
-const cookie = (valor: string, maxAge: number) =>
-  `adm=${valor}; Path=/api/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+const cookie = (rol: Rol, valor: string, maxAge: number) =>
+  `${rol}=${valor}; Path=${RUTA_COOKIE[rol]}; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+
+const ipDe = (req: Request) => req.headers.get('CF-Connecting-IP') ?? 'local';
+
+function secretoDe(env: Env) {
+  if (!env.ADMIN_PASSWORD) throw new HttpError(503, 'Falta configurar el secreto ADMIN_PASSWORD');
+  return env.ADMIN_PASSWORD;
+}
 
 async function login(req: Request, env: Env) {
-  const secreto = env.ADMIN_PASSWORD;
-  if (!secreto) throw new HttpError(503, 'Falta configurar el secreto ADMIN_PASSWORD');
-  const ip = req.headers.get('CF-Connecting-IP') ?? 'local';
-  const ahora = Date.now();
-  const ventana = ahora - 15 * 60 * 1000;
-  const { n } = (await env.DB.prepare('SELECT COUNT(*) AS n FROM login_intentos WHERE ip = ? AND ts > ?').bind(ip, ventana).first<{ n: number }>())!;
-  if (n >= 10) throw new HttpError(429, 'Demasiados intentos. Espere 15 minutos.');
-
+  const secreto = secretoDe(env);
+  const ip = ipDe(req);
+  await limitar(env.DB, ip, 10);
   const { password } = await cuerpo(req);
   if (typeof password !== 'string' || !(await iguales(password, secreto))) {
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO login_intentos (ip, ts) VALUES (?, ?)').bind(ip, ahora),
-      env.DB.prepare('DELETE FROM login_intentos WHERE ts < ?').bind(ahora - 24 * 60 * 60 * 1000),
-    ]);
+    await registrarIntento(env.DB, ip);
     throw new HttpError(401, 'Contraseña incorrecta');
   }
   await env.DB.prepare('DELETE FROM login_intentos WHERE ip = ?').bind(ip).run();
-  return json({ ok: true }, 200, { 'Set-Cookie': cookie(await crearSesion(secreto), DURACION_SESION) });
+  return json({ ok: true }, 200, { 'Set-Cookie': cookie('adm', await crearSesion(secreto, 'adm'), DURACION.adm) });
+}
+
+type PinGuardado = { sal: string; hash: string };
+
+// ─────────────────────────── Entradas ───────────────────────────
+
+/** Crea o elimina entradas para que existan 1 + acompañantes. Nunca borra una ya utilizada. */
+async function sincronizarEntradas(db: D1Database, maestranteId: number, acompanantes: number) {
+  const { results } = await db
+    .prepare('SELECT numero, ingreso FROM entradas WHERE maestrante_id = ?')
+    .bind(maestranteId)
+    .all<{ numero: number; ingreso: string | null }>();
+  const usadasDeMas = results.filter((e) => e.numero > acompanantes && e.ingreso);
+  if (usadasDeMas.length) throw new HttpError(409, 'No se puede reducir: algunos acompañantes ya ingresaron.');
+  const existentes = new Set(results.map((e) => e.numero));
+  const ops = [db.prepare('DELETE FROM entradas WHERE maestrante_id = ? AND numero > ?').bind(maestranteId, acompanantes)];
+  for (let n = 0; n <= acompanantes; n++) {
+    if (!existentes.has(n)) {
+      ops.push(db.prepare('INSERT INTO entradas (maestrante_id, numero, codigo) VALUES (?, ?, ?)').bind(maestranteId, n, aleatorio(8)));
+    }
+  }
+  await db.batch(ops);
+}
+
+async function entradasDe(db: D1Database, maestranteId: number): Promise<EntradaPublica[]> {
+  const { results } = await db
+    .prepare('SELECT numero, codigo, ingreso FROM entradas WHERE maestrante_id = ? ORDER BY numero')
+    .bind(maestranteId)
+    .all<EntradaPublica>();
+  return results;
+}
+
+/** Público: el maestrante obtiene sus entradas con su carné. */
+async function entradasPorCarne(req: Request, env: Env) {
+  const clave = `carne:${ipDe(req)}`;
+  await limitar(env.DB, clave, 15);
+  const evento = await leerEvento(env.DB);
+  if (!evento.entradasActivas) throw new HttpError(403, 'La descarga de entradas aún no está disponible.');
+  const carne = normalizarCarne((await cuerpo(req)).carne);
+  if (carne.length < 4 || carne.length > 20) throw new HttpError(400, 'Escriba su número de carné.');
+  const m = await env.DB.prepare('SELECT id, nombre, grupo, acompanantes FROM maestrantes WHERE carne = ?')
+    .bind(carne)
+    .first<{ id: number; nombre: string; grupo: number | null; acompanantes: number }>();
+  if (!m) {
+    await registrarIntento(env.DB, clave);
+    throw new HttpError(404, 'No encontramos ese carné. Verifíquelo o consulte con la Junta Directiva.');
+  }
+  return json({ nombre: m.nombre, grupo: m.grupo, acompanantes: m.acompanantes, entradas: await entradasDe(env.DB, m.id) });
+}
+
+// ─────────────────────────── Puerta (control de acceso) ───────────────────────────
+
+const SQL_ENTRADA = `SELECT e.codigo, e.numero, e.ingreso, m.id AS maestrante_id, m.nombre, m.carne, m.grupo, m.acompanantes,
+  (SELECT COUNT(*) FROM entradas x WHERE x.maestrante_id = m.id AND x.ingreso IS NOT NULL) AS ingresados
+  FROM entradas e JOIN maestrantes m ON m.id = e.maestrante_id WHERE e.codigo = ?`;
+
+async function resultado(db: D1Database, codigo: string, estado: ResultadoAcceso['estado']): Promise<ResultadoAcceso> {
+  const e = await db.prepare(SQL_ENTRADA).bind(codigo).first<NonNullable<ResultadoAcceso['entrada']>>();
+  return e ? { estado, entrada: e } : { estado: 'invalido', entrada: null };
+}
+
+async function acceso(req: Request, env: Env, ruta: string) {
+  const secreto = secretoDe(env);
+  const db = env.DB;
+  const pin = await leerConfig<PinGuardado>(db, 'pin_acceso');
+  const version = pin?.hash.slice(0, 12) ?? '';
+
+  if (ruta === 'login' && req.method === 'POST') {
+    if (!pin) throw new HttpError(503, 'El PIN de acceso aún no se ha configurado en el panel.');
+    const ip = `pin:${ipDe(req)}`;
+    await limitar(db, ip, 10);
+    const valor = (await cuerpo(req)).pin;
+    if (typeof valor !== 'string' || !(await iguales(await sha256(pin.sal + valor.trim()), pin.hash))) {
+      await registrarIntento(db, ip);
+      throw new HttpError(401, 'PIN incorrecto');
+    }
+    return json({ ok: true }, 200, { 'Set-Cookie': cookie('pta', await crearSesion(secreto, 'pta', version), DURACION.pta) });
+  }
+  if (!pin || !(await sesionValida(req, secreto, 'pta', version))) throw new HttpError(401, 'Sesión de acceso expirada');
+
+  if (ruta === 'resumen') {
+    const r = await db
+      .prepare('SELECT COUNT(*) AS total, SUM(ingreso IS NOT NULL) AS ingresados FROM entradas')
+      .first<{ total: number; ingresados: number | null }>();
+    return json({ total: r?.total ?? 0, ingresados: r?.ingresados ?? 0 });
+  }
+
+  if (ruta === 'ingreso' && req.method === 'POST') {
+    const codigo = normalizarCodigo((await cuerpo(req)).codigo);
+    if (!codigo) throw new HttpError(400, 'Código vacío');
+    // Atómico: si dos teléfonos escanean a la vez, solo uno registra el ingreso.
+    const r = await db.prepare(`UPDATE entradas SET ingreso = ${AHORA} WHERE codigo = ? AND ingreso IS NULL`).bind(codigo).run();
+    return json(await resultado(db, codigo, r.meta.changes ? 'ok' : 'usado'));
+  }
+
+  if (ruta === 'deshacer' && req.method === 'POST') {
+    const codigo = normalizarCodigo((await cuerpo(req)).codigo);
+    await db.prepare('UPDATE entradas SET ingreso = NULL WHERE codigo = ?').bind(codigo).run();
+    return json(await resultado(db, codigo, 'deshecho'));
+  }
+
+  if (ruta === 'buscar') {
+    const q = (new URL(req.url).searchParams.get('q') ?? '').trim();
+    if (q.length < 2) return json([]);
+    const { results } = await db
+      .prepare(
+        `SELECT id, nombre, carne, grupo, acompanantes FROM maestrantes
+         WHERE nombre LIKE ? OR carne LIKE ? ORDER BY nombre LIMIT 15`,
+      )
+      .bind(`%${q}%`, `%${normalizarCarne(q)}%`)
+      .all<{ id: number; nombre: string; carne: string | null; grupo: number | null; acompanantes: number }>();
+    return json(await Promise.all(results.map(async (m) => ({ ...m, entradas: await entradasDe(db, m.id) }))));
+  }
+
+  throw new HttpError(404, 'Ruta no encontrada');
 }
 
 // ─────────────────────────── Rutas públicas ───────────────────────────
@@ -202,8 +412,9 @@ async function login(req: Request, env: Env) {
 async function datosInvitacion(url: URL, env: Env): Promise<DatosInvitacion> {
   const slug = url.searchParams.get('slug')?.toLowerCase();
   const de = url.searchParams.get('de')?.toLowerCase();
-  const [evento, logos, invitado] = await Promise.all([
+  const [evento, agenda, logos, invitado] = await Promise.all([
     leerEvento(env.DB),
+    leerAgenda(env.DB),
     leerLogos(env.DB),
     slug
       ? env.DB.prepare(
@@ -220,7 +431,7 @@ async function datosInvitacion(url: URL, env: Env): Promise<DatosInvitacion> {
       ? await env.DB.prepare('SELECT id, slug, nombre, grupo FROM maestrantes WHERE slug = ?').bind(de).first()
       : null;
   if (invitado) delete (invitado as { maestrante_id?: unknown }).maestrante_id;
-  return { evento, logos, invitado: invitado ?? null, maestrante: (maestrante as DatosInvitacion['maestrante']) ?? null };
+  return { evento, agenda, logos, invitado: invitado ?? null, maestrante: (maestrante as DatosInvitacion['maestrante']) ?? null };
 }
 
 async function rsvp(req: Request, env: Env) {
@@ -231,11 +442,7 @@ async function rsvp(req: Request, env: Env) {
   const evento = await leerEvento(env.DB);
   if (!evento.rsvpActivo) throw new HttpError(403, 'La confirmación está cerrada');
   const nota = texto(b.nota, 500, 'Comentario');
-  const r = await env.DB.prepare(
-    "UPDATE invitados SET estado = ?, nota = ?, respondido = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE slug = ?",
-  )
-    .bind(estado, nota, slug)
-    .run();
+  const r = await env.DB.prepare(`UPDATE invitados SET estado = ?, nota = ?, respondido = ${AHORA} WHERE slug = ?`).bind(estado, nota, slug).run();
   if (!r.meta.changes) throw new HttpError(404, 'Invitación no encontrada');
   return json({ ok: true, estado });
 }
@@ -243,10 +450,7 @@ async function rsvp(req: Request, env: Env) {
 async function visita(req: Request, env: Env) {
   const slug = requerido((await cuerpo(req)).slug, 80, 'slug').toLowerCase();
   await env.DB.prepare(
-    `UPDATE invitados SET visitas = visitas + 1,
-       primera_visita = COALESCE(primera_visita, strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-       ultima_visita = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-     WHERE slug = ?`,
+    `UPDATE invitados SET visitas = visitas + 1, primera_visita = COALESCE(primera_visita, ${AHORA}), ultima_visita = ${AHORA} WHERE slug = ?`,
   )
     .bind(slug)
     .run();
@@ -254,7 +458,7 @@ async function visita(req: Request, env: Env) {
 }
 
 async function logo(id: string, env: Env) {
-  const l = await env.DB.prepare('SELECT tipo, datos FROM logos WHERE id = ?').bind(Number(id)).first<{ tipo: string; datos: ArrayBuffer | number[] }>();
+  const l = await env.DB.prepare('SELECT tipo, datos FROM logos WHERE id = ?').bind(Number(id) || 0).first<{ tipo: string; datos: ArrayBuffer | number[] }>();
   if (!l) return new Response('No encontrado', { status: 404 });
   const datos = Array.isArray(l.datos) ? new Uint8Array(l.datos) : l.datos;
   return new Response(datos, {
@@ -271,17 +475,48 @@ async function logo(id: string, env: Env) {
 // ─────────────────────────── Panel ───────────────────────────
 
 const TIPOS_LOGO = ['image/png', 'image/svg+xml', 'image/webp', 'image/jpeg'];
+const idDe = (id: string | undefined) => {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) throw new HttpError(400, 'Identificador inválido');
+  return n;
+};
+
+/** Guarda un maestrante (alta o edición) y sincroniza sus entradas. */
+async function guardarMaestrante(db: D1Database, b: Record<string, unknown>, id?: number) {
+  const nombre = requerido(b.nombre, 120, 'Nombre');
+  const grupo = entero(b.grupo, 'Grupo', 99);
+  const carne = normalizarCarne(b.carne) || null;
+  if (carne && (carne.length < 4 || carne.length > 20)) throw new HttpError(400, `Carné inválido: ${b.carne}`);
+  const acompanantes = entero(b.acompanantes, 'Acompañantes', 10) ?? 0;
+  if (carne) {
+    const otro = await db.prepare('SELECT id, nombre FROM maestrantes WHERE carne = ? AND id IS NOT ?').bind(carne, id ?? null).first<{ nombre: string }>();
+    if (otro) throw new HttpError(409, `El carné ${carne} ya pertenece a ${otro.nombre}`);
+  }
+  if (id) {
+    await sincronizarEntradas(db, id, acompanantes);
+    await db.prepare('UPDATE maestrantes SET nombre = ?, grupo = ?, carne = ?, acompanantes = ? WHERE id = ?').bind(nombre, grupo, carne, acompanantes, id).run();
+    return id;
+  }
+  let slug = slugify(nombre).slice(0, 40) || 'maestrante';
+  if (await db.prepare('SELECT 1 FROM maestrantes WHERE slug = ?').bind(slug).first()) slug = `${slug}-${sufijo()}`;
+  const fila = await db
+    .prepare('INSERT INTO maestrantes (slug, nombre, grupo, carne, acompanantes) VALUES (?, ?, ?, ?, ?) RETURNING id')
+    .bind(slug, nombre, grupo, carne, acompanantes)
+    .first<{ id: number }>();
+  await sincronizarEntradas(db, fila!.id, acompanantes);
+  return fila!.id;
+}
 
 async function admin(req: Request, env: Env, ruta: string) {
   const m = req.method;
   if (ruta === 'login' && m === 'POST') return login(req, env);
-  if (!env.ADMIN_PASSWORD) throw new HttpError(503, 'Falta configurar el secreto ADMIN_PASSWORD');
-  if (!(await sesionValida(req, env.ADMIN_PASSWORD))) throw new HttpError(401, 'Sesión expirada');
-  if (ruta === 'logout' && m === 'POST') return json({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
+  const secreto = secretoDe(env);
+  if (!(await sesionValida(req, secreto, 'adm'))) throw new HttpError(401, 'Sesión expirada');
+  if (ruta === 'logout' && m === 'POST') return json({ ok: true }, 200, { 'Set-Cookie': cookie('adm', '', 0) });
   if (ruta === 'sesion') return json({ ok: true });
 
   const db = env.DB;
-  const [recurso, id] = ruta.split('/');
+  const [recurso, id, accion] = ruta.split('/');
 
   if (recurso === 'invitados') {
     if (m === 'GET' && !id) {
@@ -294,7 +529,7 @@ async function admin(req: Request, env: Env, ruta: string) {
       return json(results);
     }
     if (m === 'DELETE' && id) {
-      await db.prepare('DELETE FROM invitados WHERE id = ?').bind(Number(id)).run();
+      await db.prepare('DELETE FROM invitados WHERE id = ?').bind(idDe(id)).run();
       return json({ ok: true });
     }
     if (m === 'POST' || m === 'PUT') {
@@ -326,12 +561,12 @@ async function admin(req: Request, env: Env, ruta: string) {
         .prepare(
           `UPDATE invitados SET tratamiento = ?, nombre = ?, cargo = ?, unidad = ?, institucion = ?, mensaje = ?, maestrante_id = ?,
              estado = COALESCE(?, estado),
-             respondido = CASE WHEN ? IS NULL OR ? = estado THEN respondido WHEN ? = 'pendiente' THEN NULL ELSE strftime('%Y-%m-%dT%H:%M:%SZ','now') END
+             respondido = CASE WHEN ? IS NULL OR ? = estado THEN respondido WHEN ? = 'pendiente' THEN NULL ELSE ${AHORA} END
            WHERE id = ?`,
         )
         .bind(
           campos.tratamiento, campos.nombre, campos.cargo, campos.unidad, campos.institucion, campos.mensaje, campos.maestrante_id,
-          estado ?? null, estado ?? null, estado ?? null, estado ?? null, Number(id),
+          estado ?? null, estado ?? null, estado ?? null, estado ?? null, idDe(id),
         )
         .run();
       return json({ ok: true });
@@ -339,22 +574,83 @@ async function admin(req: Request, env: Env, ruta: string) {
   }
 
   if (recurso === 'maestrantes') {
-    if (m === 'GET') return json((await db.prepare('SELECT * FROM maestrantes ORDER BY grupo, nombre').all()).results);
+    if (m === 'GET') {
+      const { results } = await db
+        .prepare(
+          `SELECT m.*, COUNT(e.id) AS entradas, SUM(e.ingreso IS NOT NULL) AS ingresados
+           FROM maestrantes m LEFT JOIN entradas e ON e.maestrante_id = m.id
+           GROUP BY m.id ORDER BY m.grupo IS NULL, m.grupo, m.nombre`,
+        )
+        .all();
+      return json(results);
+    }
     if (m === 'DELETE' && id) {
-      await db.prepare('DELETE FROM maestrantes WHERE id = ?').bind(Number(id)).run();
+      await db.prepare('DELETE FROM maestrantes WHERE id = ?').bind(idDe(id)).run();
+      return json({ ok: true });
+    }
+    // Carga masiva desde una hoja de cálculo: [{nombre, carne, grupo, acompanantes}]
+    if (m === 'POST' && id === 'importar') {
+      const filas = (await cuerpo(req)).filas;
+      if (!Array.isArray(filas) || !filas.length || filas.length > 300) throw new HttpError(400, 'Pegue entre 1 y 300 filas');
+      let creados = 0;
+      let actualizados = 0;
+      const errores: string[] = [];
+      for (const [i, f] of filas.entries()) {
+        try {
+          const fila = f as Record<string, unknown>;
+          const carne = normalizarCarne(fila.carne);
+          // Coincide por carné; si no, por nombre exacto de alguien aún sin carné (evita duplicados).
+          const existente =
+            (carne ? await db.prepare('SELECT id FROM maestrantes WHERE carne = ?').bind(carne).first<{ id: number }>() : null) ??
+            (await db
+              .prepare('SELECT id FROM maestrantes WHERE carne IS NULL AND lower(trim(nombre)) = lower(trim(?))')
+              .bind(String(fila.nombre ?? ''))
+              .first<{ id: number }>());
+          await guardarMaestrante(db, f as Record<string, unknown>, existente?.id);
+          existente ? actualizados++ : creados++;
+        } catch (e) {
+          errores.push(`Fila ${i + 1}: ${e instanceof Error ? e.message : 'error'}`);
+        }
+      }
+      return json({ creados, actualizados, errores });
+    }
+    if (m === 'POST' && id && accion === 'reiniciar') {
+      await db.prepare('UPDATE entradas SET ingreso = NULL WHERE maestrante_id = ?').bind(idDe(id)).run();
       return json({ ok: true });
     }
     if (m === 'POST' || m === 'PUT') {
-      const b = await cuerpo(req);
-      const nombre = requerido(b.nombre, 120, 'Nombre');
-      const grupo = entero(b.grupo, 'Grupo');
-      if (m === 'POST') {
-        let slug = slugify(nombre).slice(0, 40) || 'maestrante';
-        if (await db.prepare('SELECT 1 FROM maestrantes WHERE slug = ?').bind(slug).first()) slug = `${slug}-${sufijo()}`;
-        return json(await db.prepare('INSERT INTO maestrantes (slug, nombre, grupo) VALUES (?, ?, ?) RETURNING *').bind(slug, nombre, grupo).first(), 201);
-      }
-      await db.prepare('UPDATE maestrantes SET nombre = ?, grupo = ? WHERE id = ?').bind(nombre, grupo, Number(id)).run();
+      const nuevo = await guardarMaestrante(db, await cuerpo(req), m === 'PUT' ? idDe(id) : undefined);
+      return json({ id: nuevo }, m === 'POST' ? 201 : 200);
+    }
+  }
+
+  if (recurso === 'entradas') {
+    if (m === 'GET' && id) return json(await entradasDe(db, idDe(id)));
+    if (m === 'POST' && id === 'reiniciar') {
+      await db.prepare('UPDATE entradas SET ingreso = NULL').run();
       return json({ ok: true });
+    }
+  }
+
+  if (recurso === 'pin' && m === 'PUT') {
+    const pin = String((await cuerpo(req)).pin ?? '').trim();
+    if (!/^\d{6,10}$/.test(pin)) throw new HttpError(400, 'El PIN debe tener entre 6 y 10 dígitos');
+    const sal = aleatorio(16);
+    await guardarConfig(db, 'pin_acceso', { sal, hash: await sha256(sal + pin) } satisfies PinGuardado);
+    return json({ ok: true });
+  }
+  if (recurso === 'pin' && m === 'GET') return json({ configurado: !!(await leerConfig(db, 'pin_acceso')) });
+
+  if (recurso === 'agenda') {
+    if (m === 'GET') return json(await leerAgenda(db));
+    if (m === 'PUT') {
+      const agenda = validarAgenda((await cuerpo(req)).agenda);
+      await guardarConfig(db, 'agenda', agenda);
+      return json(agenda);
+    }
+    if (m === 'DELETE') {
+      await db.prepare("DELETE FROM config WHERE clave = 'agenda'").run();
+      return json(agendaPorDefecto);
     }
   }
 
@@ -362,9 +658,7 @@ async function admin(req: Request, env: Env, ruta: string) {
     if (m === 'GET') return json(await leerEvento(db));
     if (m === 'PUT') {
       const cambios = validarEvento(await cuerpo(req));
-      const fila = await db.prepare("SELECT valor FROM config WHERE clave = 'evento'").first<{ valor: string }>();
-      const valor = JSON.stringify({ ...(fila ? JSON.parse(fila.valor) : {}), ...cambios });
-      await db.prepare("INSERT INTO config (clave, valor) VALUES ('evento', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor").bind(valor).run();
+      await guardarConfig(db, 'evento', { ...((await leerConfig(db, 'evento')) ?? {}), ...cambios });
       return json(await leerEvento(db));
     }
   }
@@ -372,14 +666,14 @@ async function admin(req: Request, env: Env, ruta: string) {
   if (recurso === 'logos') {
     if (m === 'GET') return json(await leerLogos(db));
     if (m === 'DELETE' && id) {
-      await db.prepare('DELETE FROM logos WHERE id = ?').bind(Number(id)).run();
+      await db.prepare('DELETE FROM logos WHERE id = ?').bind(idDe(id)).run();
       return json({ ok: true });
     }
     if (m === 'PUT' && id) {
       const b = await cuerpo(req);
       await db
-        .prepare("UPDATE logos SET alt = ?, orden = ?, actualizado = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?")
-        .bind(requerido(b.alt, 160, 'Texto alternativo'), entero(b.orden, 'Orden') ?? 0, Number(id))
+        .prepare(`UPDATE logos SET alt = ?, orden = ?, actualizado = ${AHORA} WHERE id = ?`)
+        .bind(requerido(b.alt, 160, 'Texto alternativo'), entero(b.orden, 'Orden') ?? 0, idDe(id))
         .run();
       return json({ ok: true });
     }
@@ -412,6 +706,8 @@ export default {
       if (p === '/api/invitacion' && req.method === 'GET') return json(await datosInvitacion(url, env));
       if (p === '/api/rsvp' && req.method === 'POST') return await rsvp(req, env);
       if (p === '/api/visita' && req.method === 'POST') return await visita(req, env);
+      if (p === '/api/entradas' && req.method === 'POST') return await entradasPorCarne(req, env);
+      if (p.startsWith('/api/acceso/')) return await acceso(req, env, p.slice('/api/acceso/'.length).replace(/\/$/, ''));
       if (p.startsWith('/api/admin/')) return await admin(req, env, p.slice('/api/admin/'.length).replace(/\/$/, ''));
       if (p.startsWith('/media/logo/')) return await logo(p.split('/')[3], env);
       if (p === '/evento.ics') {

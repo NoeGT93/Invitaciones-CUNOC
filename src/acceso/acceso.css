@@ -1,0 +1,354 @@
+/* Control de acceso: pensado para usarse de noche, de pie y con una mano. */
+.pta {
+  min-height: 100svh;
+  background: #071f3d;
+  color: var(--ivory);
+  display: flex;
+  flex-direction: column;
+  font-size: 1rem;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pta--login {
+  justify-content: center;
+  align-items: center;
+  padding: var(--gutter);
+}
+
+.pta-eyebrow {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.pta-login {
+  width: min(100%, 22rem);
+  display: grid;
+  gap: 1.25rem;
+}
+
+.pta-login h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 2.25rem;
+  line-height: 1.1;
+}
+
+.pta-login label,
+.pta-manual label,
+label.pta-manual {
+  display: grid;
+  gap: 0.4rem;
+  font-size: var(--fs-small);
+  color: rgb(252 251 248 / 0.75);
+}
+
+.pta input {
+  min-height: 52px;
+  padding: 0 1rem;
+  border: 1px solid rgb(252 251 248 / 0.25);
+  border-radius: 4px;
+  background: rgb(252 251 248 / 0.06);
+  color: var(--ivory);
+  font: inherit;
+  font-size: 1.125rem;
+  letter-spacing: 0.08em;
+}
+
+.pta input:focus {
+  outline: 2px solid var(--gold);
+  border-color: transparent;
+}
+
+.pta-error {
+  color: #ffb4a8;
+  font-size: var(--fs-small);
+}
+
+.pta-btn {
+  min-height: 52px;
+  padding: 0 1.25rem;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pta-btn:active {
+  transform: scale(0.98);
+}
+
+.pta-btn--gold {
+  background: var(--gold);
+  color: #1b1405;
+}
+
+.pta-btn--light {
+  background: #fff;
+  color: #0b1f36;
+}
+
+.pta-btn--ghost {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+}
+
+.pta-btn--small {
+  min-height: 40px;
+  padding: 0 0.9rem;
+  background: var(--gold);
+  color: #1b1405;
+  font-size: var(--fs-small);
+}
+
+/* Cabecera con contador */
+.pta-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: 0.75rem;
+  padding: calc(0.85rem + env(safe-area-inset-top)) 1rem 0;
+  background: #071f3d;
+}
+
+.pta-count {
+  font-size: var(--fs-small);
+  color: rgb(252 251 248 / 0.75);
+}
+
+.pta-count strong {
+  font-family: var(--serif);
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--ivory);
+}
+
+.pta-bar {
+  height: 3px;
+  background: rgb(252 251 248 / 0.12);
+}
+
+.pta-bar span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  transition: width 0.6s var(--ease);
+}
+
+.pta-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.pta-tabs button {
+  min-height: 48px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: rgb(252 251 248 / 0.65);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pta-tabs button.is-active {
+  color: var(--ivory);
+  border-bottom-color: var(--gold);
+}
+
+/* Cámara */
+.pta-cam {
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #000;
+}
+
+.pta-cam video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pta-cam__frame {
+  position: relative;
+  width: min(68vw, 300px);
+  aspect-ratio: 1;
+  border-radius: 12px;
+  box-shadow: 0 0 0 100vmax rgb(7 31 61 / 0.55);
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
+.pta-cam__hint {
+  position: absolute;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  left: 1rem;
+  right: 1rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+/* Resultado a pantalla completa: se distingue a un metro de distancia */
+.pta-result {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  padding: calc(1.5rem + env(safe-area-inset-top)) 1.5rem calc(1.5rem + env(safe-area-inset-bottom));
+  text-align: center;
+  overflow-y: auto;
+  animation: pta-in 0.25s var(--ease) both;
+}
+
+@keyframes pta-in {
+  from { opacity: 0; transform: scale(1.03); }
+}
+
+.pta-result--ok { background: #13603a; }
+.pta-result--usado { background: #9a6a06; }
+.pta-result--invalido { background: #8f2219; }
+.pta-result--deshecho { background: #36475e; }
+
+.pta-result__icon {
+  display: grid;
+  place-items: center;
+  width: 5.5rem;
+  height: 5.5rem;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  font-size: 2.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.pta-result h2 {
+  color: inherit;
+  font-family: var(--serif);
+  font-size: 2.4rem;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.pta-result__type {
+  margin-top: 0.75rem;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.pta-result__name {
+  font-family: var(--serif);
+  font-size: 1.75rem;
+  line-height: 1.2;
+  max-width: 22ch;
+}
+
+.pta-result__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  width: min(100%, 22rem);
+  margin-top: 1rem;
+}
+
+.pta-result__facts div {
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.18);
+}
+
+.pta-result__facts dt {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.pta-result__facts dd {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.pta-result__when,
+.pta-result__code {
+  font-size: var(--fs-small);
+  opacity: 0.9;
+}
+
+.pta-result__code {
+  letter-spacing: 0.2em;
+}
+
+.pta-result__actions {
+  display: grid;
+  gap: 0.75rem;
+  width: min(100%, 22rem);
+  margin-top: 1.5rem;
+}
+
+/* Búsqueda */
+.pta-search {
+  display: grid;
+  gap: 1.25rem;
+  align-content: start;
+  padding: 1.25rem 1rem 3rem;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+form.pta-manual {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.pta-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.pta-list > li {
+  padding: 1rem;
+  border: 1px solid rgb(252 251 248 / 0.14);
+  border-radius: 6px;
+}
+
+.pta-list p {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.pta-list p span,
+.pta-list em {
+  font-size: var(--fs-small);
+  color: rgb(252 251 248 / 0.7);
+}
+
+.pta-list ul li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  min-height: 48px;
+  border-top: 1px solid rgb(252 251 248 / 0.1);
+}

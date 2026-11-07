@@ -4,5 +4,5 @@
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["worker", "src/data", "src/utils"]
+  "include": ["worker", "src/data", "src/utils/calendar.ts", "src/utils/slugs.ts"]
 }

@@ -134,7 +134,7 @@ export function Invitados({ onError }: { onError: (e: unknown) => void }) {
     <section aria-labelledby="t-invitados">
       <div className="adm-head">
         <div>
-          <h1 id="t-invitados">Invitados</h1>
+          <h1 id="t-invitados">Autoridades e invitados</h1>
           <p className="adm-muted">Cada invitado recibe un enlace único. Las respuestas aparecen aquí al instante.</p>
         </div>
         <div className="adm-head__actions">

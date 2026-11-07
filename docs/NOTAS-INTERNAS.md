@@ -15,7 +15,7 @@ Este archivo no se importa en ningún componente ni se copia a `dist/`.
 
 | Tema | Situación | Dónde se corrige |
 | --- | --- | --- |
-| Horario de apertura | «Palabras de apertura» ocupa 4:10 – 4:15 con tres intervenciones y tres himnos, pero las presentaciones inician a las 4:15. Los himnos se muestran **sin horario**. | `src/data/agenda.ts` |
+| Horario de apertura | «Palabras de apertura» ocupa 4:10 – 4:15 con tres intervenciones y tres himnos, pero las presentaciones inician a las 4:15. Los himnos se muestran **sin horario**. | `/admin` → Agenda |
 | Hora de finalización | No confirmada. El `.ics` se genera sin `DTEND`. | `/admin` → Evento |
 | Comentarios finales / Fotografía oficial | Sin horario en la fuente. Se muestran sin hora. | `src/data/agenda.ts` |
 | Programa de cierre | Sin horarios en la fuente. Se numeran 01–07 (orden, no hora). | `src/data/agenda.ts` |

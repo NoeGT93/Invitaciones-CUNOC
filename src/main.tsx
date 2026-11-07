@@ -9,11 +9,18 @@ import { InvitationPage } from './pages/InvitationPage';
 
 // El panel se descarga solo al visitar /admin: la invitación no carga su código.
 const AdminApp = lazy(() => import('./admin/AdminApp'));
-const esAdmin = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
+const AccesoApp = lazy(() => import('./acceso/AccesoApp'));
+const ruta = location.pathname.replace(/\/$/, '');
+const esAcceso = ruta === '/acceso';
+const esAdmin = ruta === '/admin' || ruta.startsWith('/admin/');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {esAdmin ? (
+    {esAcceso ? (
+      <Suspense fallback={null}>
+        <AccesoApp />
+      </Suspense>
+    ) : esAdmin ? (
       <Suspense fallback={null}>
         <AdminApp />
       </Suspense>

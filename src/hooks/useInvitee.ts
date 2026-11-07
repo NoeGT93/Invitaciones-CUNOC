@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { agendaPorDefecto } from '../data/agenda';
 import { eventoPorDefecto } from '../data/evento';
 import type { DatosInvitacion } from '../data/tipos';
 import { slugDeRuta } from '../utils/slugs';
 
-const vacio: DatosInvitacion = { evento: eventoPorDefecto, logos: [], invitado: null, maestrante: null };
+const vacio: DatosInvitacion = { evento: eventoPorDefecto, agenda: agendaPorDefecto, logos: [], invitado: null, maestrante: null };
 
 /**
  * Carga evento, logotipos, invitado (/invitacion/<slug>) y maestrante (?de=) desde la API.

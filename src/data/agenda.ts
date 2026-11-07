@@ -109,3 +109,6 @@ export const programaCierre: BloqueAgenda = {
     { titulo: 'Palabras de agradecimiento', responsable: 'Yeni Macario' },
   ],
 };
+
+/** Agenda inicial. Desde el panel (/admin → Agenda) se puede reemplazar por completo. */
+export const agendaPorDefecto: BloqueAgenda[] = [actoAcademico, programaCierre];

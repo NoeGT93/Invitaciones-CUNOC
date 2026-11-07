@@ -1333,3 +1333,189 @@ h2 {
     min-height: auto;
   }
 }
+
+.block__legend {
+  margin: -0.25rem 0 0.5rem;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--blue);
+}
+
+/* ───────────────── Entradas de maestrantes ───────────────── */
+.tickets {
+  width: 100%;
+  max-width: 52rem;
+  display: grid;
+  justify-items: center;
+  gap: 1.75rem;
+  padding: clamp(2.5rem, 2rem + 2vw, 3.5rem) clamp(1.25rem, 4vw, 3rem);
+  border: 1px solid var(--border);
+  background: linear-gradient(var(--ivory), var(--ivory-deep));
+  text-align: center;
+}
+
+.tickets__head {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+}
+
+.tickets__title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(1.9rem, 1.5rem + 1.6vw, 2.6rem);
+  line-height: 1.1;
+  color: var(--navy);
+}
+
+.tickets__text,
+.tickets__note {
+  max-width: 34rem;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.tickets__form {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 30rem;
+}
+
+.tickets__field {
+  flex: 1 1 14rem;
+  display: grid;
+  gap: 0.4rem;
+  text-align: left;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tickets__field input {
+  min-height: 3.25rem;
+  padding: 0 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--ivory);
+  color: var(--navy);
+  font: inherit;
+  font-size: 1.125rem; /* ≥16px: sin zoom automático en iOS */
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+
+.tickets__field input:focus {
+  outline: none;
+  border-color: var(--navy);
+}
+
+.tickets__error {
+  font-size: var(--fs-small);
+  color: #9b2c1f;
+}
+
+.tickets__result {
+  display: grid;
+  justify-items: center;
+  gap: 1.5rem;
+  width: 100%;
+  animation: rise 0.8s var(--ease) both;
+}
+
+.tickets__who {
+  display: grid;
+  gap: 0.25rem;
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  color: var(--navy);
+}
+
+.tickets__who span {
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+.tickets__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.ticket {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  padding: 1.5rem 1.25rem 1.25rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  animation: rise 0.7s var(--ease) both;
+}
+
+.ticket:nth-child(2) { animation-delay: 0.08s; }
+.ticket:nth-child(3) { animation-delay: 0.16s; }
+.ticket:nth-child(4) { animation-delay: 0.24s; }
+.ticket:nth-child(n + 5) { animation-delay: 0.3s; }
+
+/* Muescas laterales de boleto */
+.ticket::before,
+.ticket::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--ivory-deep);
+}
+
+.ticket::before { left: -8px; clip-path: inset(0 0 0 50%); }
+.ticket::after { right: -8px; clip-path: inset(0 50% 0 0); }
+
+.ticket__type {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+.ticket__qr {
+  width: 100%;
+  max-width: 11rem;
+  height: auto;
+}
+
+.ticket__code {
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket__actions {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.ticket.is-used .ticket__qr {
+  opacity: 0.25;
+}
+
+.ticket__used {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: #2f7d4f;
+}

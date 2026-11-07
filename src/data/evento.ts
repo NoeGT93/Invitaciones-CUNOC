@@ -33,6 +33,8 @@ export interface Evento {
   descripcion: string;
   /** Editable. Permite a los invitados confirmar desde su enlace. */
   rsvpActivo: boolean;
+  /** Editable. Muestra a los maestrantes el apartado para descargar sus entradas QR. */
+  entradasActivas: boolean;
   /** Editable. Fecha ISO sugerida para confirmar (opcional). */
   rsvpFechaLimite?: string;
   /** Editable. Textos de la carta. */
@@ -66,6 +68,7 @@ export const eventoPorDefecto: Evento = {
   descripcion:
     'Presentación de Seminario y Cierre de Maestría de los estudiantes de la Maestría en Marketing Estratégico y Alta Gerencia, División de Ciencias Económicas, Centro Universitario de Occidente – CUNOC, Universidad de San Carlos de Guatemala.',
   rsvpActivo: true,
+  entradasActivas: true,
   rsvpFechaLimite: undefined,
   mensaje: {
     aperturaGeneral:

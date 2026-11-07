@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Agenda } from '../components/Agenda';
+import { Entradas } from '../components/Entradas';
 import { EventDetails } from '../components/EventDetails';
 import { Footer } from '../components/Footer';
 import { HeroInvitation } from '../components/HeroInvitation';
@@ -36,6 +37,7 @@ export function InvitationPage() {
             <RSVP
               onCambio={(estado, nota) => setDatos((d) => (d.invitado ? { ...d, invitado: { ...d.invitado, estado, nota } } : d))}
             />
+            <Entradas />
           </div>
         </section>
         <Agenda />

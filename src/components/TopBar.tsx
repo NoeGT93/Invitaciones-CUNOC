@@ -22,6 +22,11 @@ export function TopBar() {
       <div className="topbar__links">
         <a href="#informacion">Información</a>
         <a href="#programa">Programa</a>
+        {!invitado && evento.entradasActivas && (
+          <a className="topbar__rsvp" href="#entradas">
+            Entradas
+          </a>
+        )}
         {pendiente && (
           <a className="topbar__rsvp" href="#confirmacion">
             Confirmar

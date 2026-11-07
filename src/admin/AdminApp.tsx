@@ -1,14 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import './admin.css';
 import { api, ApiError } from './api';
+import { AgendaForm } from './AgendaForm';
 import { EventoForm } from './EventoForm';
 import { Invitados } from './Invitados';
 import { Logos } from './Logos';
 import { Maestrantes } from './Maestrantes';
 
 const SECCIONES = [
-  { id: 'invitados', nombre: 'Invitados' },
-  { id: 'maestrantes', nombre: 'Maestrantes' },
+  { id: 'invitados', nombre: 'Autoridades e invitados' },
+  { id: 'maestrantes', nombre: 'Maestrantes y entradas' },
+  { id: 'agenda', nombre: 'Agenda' },
   { id: 'evento', nombre: 'Evento' },
   { id: 'logos', nombre: 'Logotipos' },
 ] as const;
@@ -107,6 +109,7 @@ export default function AdminApp() {
       <main className="adm-main">
         {seccion === 'invitados' && <Invitados onError={alError} />}
         {seccion === 'maestrantes' && <Maestrantes onError={alError} />}
+        {seccion === 'agenda' && <AgendaForm onError={alError} />}
         {seccion === 'evento' && <EventoForm onError={alError} />}
         {seccion === 'logos' && <Logos onError={alError} />}
       </main>

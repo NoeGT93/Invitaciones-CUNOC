@@ -28,11 +28,11 @@ export function EventoForm({ onError }: { onError: (e: unknown) => void }) {
     setEstado('guardando');
     setError('');
     try {
-      const { fecha, horaInicio, horaFin, lugar, ciudad, direccion, mapsUrl, rsvpActivo, rsvpFechaLimite, mensaje } = ev!;
+      const { fecha, horaInicio, horaFin, lugar, ciudad, direccion, mapsUrl, rsvpActivo, entradasActivas, rsvpFechaLimite, mensaje } = ev!;
       setEv(
         await api<Evento>('evento', {
           method: 'PUT',
-          body: { fecha, horaInicio, horaFin: horaFin || '', lugar, ciudad, direccion, mapsUrl, rsvpActivo, rsvpFechaLimite: rsvpFechaLimite || '', mensaje },
+          body: { fecha, horaInicio, horaFin: horaFin || '', lugar, ciudad, direccion, mapsUrl, rsvpActivo, entradasActivas, rsvpFechaLimite: rsvpFechaLimite || '', mensaje },
         }),
       );
       setEstado('ok');
@@ -93,6 +93,10 @@ export function EventoForm({ onError }: { onError: (e: unknown) => void }) {
             <label className="adm-check adm-field--full">
               <input type="checkbox" checked={ev.rsvpActivo} onChange={(e) => set('rsvpActivo', e.target.checked)} />
               <span>Permitir que los invitados confirmen desde su enlace</span>
+            </label>
+            <label className="adm-check adm-field--full">
+              <input type="checkbox" checked={ev.entradasActivas} onChange={(e) => set('entradasActivas', e.target.checked)} />
+              <span>Mostrar a los maestrantes el apartado para descargar sus entradas QR</span>
             </label>
             <label className="adm-field">
               <span>Fecha sugerida para responder (opcional)</span>
