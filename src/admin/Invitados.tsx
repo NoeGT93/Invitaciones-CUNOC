@@ -5,7 +5,7 @@ import { nombreCompleto, textoWhatsApp } from '../utils/redaccion';
 import { api, urlInvitacion } from './api';
 
 const ESTADOS: Record<EstadoRsvp, string> = { pendiente: 'Pendiente', confirmado: 'Confirmado', declinado: 'No asistirá' };
-const TRATAMIENTOS = ['MSc.', 'MA.', 'Dr.', 'Dra.', 'Lic.', 'Licda.', 'Ing.', 'Inga.', 'Arq.', 'PhD.'];
+const TRATAMIENTOS = ['MSc.', 'Mgtr.', 'MA.', 'Dr.', 'Dra.', 'Lic.', 'Licda.', 'Ing.', 'Inga.', 'Arq.', 'PhD.'];
 
 type Filtro = 'todos' | EstadoRsvp | 'sin-abrir';
 type Borrador = Partial<InvitadoAdmin>;
