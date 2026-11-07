@@ -1629,21 +1629,21 @@ h2 {
 
 /* Íconos de la agenda: sustituyen al punto en el riel */
 .tl {
-  --rail: 0.95rem;
+  --rail: 1.25rem;
 }
 
 .tl__item {
-  padding-left: 2.85rem;
+  padding-left: 3.4rem;
 }
 
 .tl__badge {
   position: absolute;
-  left: calc(var(--rail) - 15px);
-  top: 1.05rem;
+  left: calc(var(--rail) - 20px);
+  top: 0.7rem;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   border: 1px solid rgb(201 148 43 / 0.55);
   border-radius: 50%;
   background: var(--ivory);
@@ -1658,11 +1658,11 @@ h2 {
 }
 
 .icono {
-  width: 16px;
-  height: 16px;
+  width: 21px;
+  height: 21px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.35;
+  stroke-width: 1.3;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1691,6 +1691,6 @@ h2 {
     padding-left: 0;
   }
   .tl__badge {
-    top: 1.3rem;
+    top: 0.95rem;
   }
 }
