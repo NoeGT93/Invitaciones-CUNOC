@@ -143,33 +143,22 @@ h2 {
   padding: clamp(1.75rem, 1rem + 3vw, 3rem) var(--gutter) clamp(6.5rem, 5rem + 6vw, 10rem);
 }
 
+/* Logotipos: misma altura, centrados en una línea; el fondo claro residual se funde con el papel */
 .logos {
+  --logo-h: clamp(4.25rem, 3.2rem + 4vw, 6.75rem);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(1rem, 0.5rem + 3vw, 2.5rem);
+  gap: clamp(1.5rem, 1rem + 3vw, 3.25rem);
   margin-bottom: clamp(2rem, 1.2rem + 3.5vw, 3.75rem);
 }
 
-.logos > * + * {
-  position: relative;
-}
-
-.logos > * + *::before {
-  content: '';
-  position: absolute;
-  left: calc(clamp(1rem, 0.5rem + 3vw, 2.5rem) / -2);
-  top: 15%;
-  height: 70%;
-  width: 1px;
-  background: var(--border);
-}
-
 .logo {
-  height: clamp(2.75rem, 2.2rem + 2.4vw, 4.25rem);
+  height: var(--logo-h);
   width: auto;
-  max-width: 30vw;
+  max-width: 40vw;
   object-fit: contain;
+  mix-blend-mode: multiply;
 }
 
 .logo--pendiente {
@@ -207,7 +196,7 @@ h2 {
 }
 
 .logos--vacio {
-  height: clamp(2.75rem, 2.2rem + 2.4vw, 4.25rem);
+  height: clamp(4.25rem, 3.2rem + 4vw, 6.75rem);
   margin-bottom: clamp(2rem, 1.2rem + 3.5vw, 3.75rem);
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Logo } from '../data/tipos';
 import { api } from './api';
+import { limpiarLogo } from './limpiarLogo';
 
 const SUGERENCIAS = [
   'Escudo de la Universidad de San Carlos de Guatemala',
@@ -25,8 +26,11 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
   const [lista, setLista] = useState<Logo[] | null>(null);
   const [alt, setAlt] = useState('');
   const [archivo, setArchivo] = useState<File | null>(null);
+  const [limpiar, setLimpiar] = useState(true);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
   const [subiendo, setSubiendo] = useState(false);
+  const [ajustando, setAjustando] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   const cargar = () =>
@@ -39,18 +43,33 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Los PNG/JPG/WEBP se limpian (fondo y márgenes); el SVG se usa tal cual. */
+  async function preparar(origen: Blob, conLimpieza: boolean) {
+    const form = new FormData();
+    if (conLimpieza && origen.type !== 'image/svg+xml') {
+      const r = await limpiarLogo(origen);
+      form.set('archivo', new File([r.blob], 'logo.png', { type: 'image/png' }));
+      form.set('ancho', String(r.ancho));
+      form.set('alto', String(r.alto));
+      return { form, cambio: r.cambio };
+    }
+    const f = origen instanceof File ? origen : new File([origen], 'logo', { type: origen.type });
+    const { ancho, alto } = await medir(f);
+    form.set('archivo', f);
+    form.set('ancho', String(ancho));
+    form.set('alto', String(alto));
+    return { form, cambio: false };
+  }
+
   async function subir(e: FormEvent) {
     e.preventDefault();
     if (!archivo) return;
     setSubiendo(true);
     setError('');
+    setAviso('');
     try {
-      const { ancho, alto } = await medir(archivo);
-      const form = new FormData();
-      form.set('archivo', archivo);
+      const { form } = await preparar(archivo, limpiar);
       form.set('alt', alt);
-      form.set('ancho', String(ancho));
-      form.set('alto', String(alto));
       setLista(await api<Logo[]>('logos', { form }));
       setAlt('');
       setArchivo(null);
@@ -60,6 +79,32 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
       setError(err instanceof Error ? err.message : 'No se pudo subir');
     } finally {
       setSubiendo(false);
+    }
+  }
+
+  /** Aplica la limpieza a un logotipo ya subido y reemplaza su imagen. */
+  async function ajustar(l: Logo) {
+    setAjustando(l.id);
+    setError('');
+    setAviso('');
+    try {
+      const original = await (await fetch(l.src)).blob();
+      if (original.type === 'image/svg+xml') {
+        setAviso('Los SVG no necesitan este ajuste.');
+        return;
+      }
+      const { form, cambio } = await preparar(original, true);
+      if (!cambio) {
+        setAviso(`«${l.alt}» ya estaba limpio.`);
+        return;
+      }
+      setLista(await api<Logo[]>(`logos/${l.id}/archivo`, { form }));
+      setAviso(`Listo: se quitó el fondo y los márgenes de «${l.alt}».`);
+    } catch (err) {
+      onError(err);
+      setError(err instanceof Error ? err.message : 'No se pudo ajustar');
+    } finally {
+      setAjustando(null);
     }
   }
 
@@ -84,8 +129,8 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
         <div>
           <h1 id="t-logos">Logotipos</h1>
           <p className="adm-muted">
-            Use únicamente archivos oficiales (PNG o SVG con fondo transparente, máx. 1 MB). Se muestran en la cabecera en este orden, con
-            altura uniforme y sin deformarse.
+            Use únicamente archivos oficiales (PNG, JPG o SVG, máx. 1 MB). Al subirlos se quita el fondo liso que los rodea y se
+            recortan los márgenes, para que todos se vean del mismo tamaño. Se muestran en la cabecera en este orden.
           </p>
         </div>
       </div>
@@ -112,6 +157,10 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
             ))}
           </datalist>
         </label>
+        <label className="adm-check">
+          <input type="checkbox" checked={limpiar} onChange={(e) => setLimpiar(e.target.checked)} />
+          <span>Quitar fondo y márgenes</span>
+        </label>
         <div className="adm-form__actions">
           <button className="adm-btn adm-btn--primary" disabled={subiendo || !archivo}>
             {subiendo ? 'Subiendo…' : 'Subir logotipo'}
@@ -119,6 +168,7 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
         </div>
       </form>
       {error && <p className="adm-error" role="alert">{error}</p>}
+      {aviso && <p className="adm-ok" role="status">{aviso}</p>}
 
       {lista === null ? (
         <p className="adm-muted">Cargando…</p>
@@ -141,6 +191,9 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
                 </button>
                 <button className="adm-chip" disabled={i === lista.length - 1} onClick={() => mover(i, 1)} aria-label={`Mover ${l.alt} a la derecha`}>
                   →
+                </button>
+                <button className="adm-chip" onClick={() => ajustar(l)} disabled={ajustando !== null}>
+                  {ajustando === l.id ? 'Ajustando…' : 'Quitar fondo y márgenes'}
                 </button>
                 <button className="adm-chip adm-chip--danger" onClick={() => eliminar(l)}>
                   Eliminar

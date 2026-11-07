@@ -723,6 +723,14 @@ async function admin(req: Request, env: Env, ruta: string) {
       if (!(archivo instanceof File)) throw new HttpError(400, 'Seleccione un archivo');
       if (!TIPOS_LOGO.includes(archivo.type)) throw new HttpError(400, 'Formato no admitido (PNG, SVG, WEBP o JPG)');
       if (archivo.size > 1024 * 1024) throw new HttpError(400, 'El archivo supera 1 MB');
+      // Reemplazar la imagen de un logotipo existente (p. ej. tras quitarle el fondo).
+      if (id && accion === 'archivo') {
+        await db
+          .prepare(`UPDATE logos SET tipo = ?, datos = ?, ancho = ?, alto = ?, actualizado = ${AHORA} WHERE id = ?`)
+          .bind(archivo.type, await archivo.arrayBuffer(), entero(form.get('ancho'), 'Ancho'), entero(form.get('alto'), 'Alto'), idDe(id))
+          .run();
+        return json(await leerLogos(db));
+      }
       const alt = requerido(form.get('alt'), 160, 'Texto alternativo');
       const { n } = (await db.prepare('SELECT COALESCE(MAX(orden), -1) + 1 AS n FROM logos').first<{ n: number }>())!;
       await db
