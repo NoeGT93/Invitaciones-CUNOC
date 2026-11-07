@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { BloqueAgenda, ItemAgenda } from '../data/agenda';
+import { ICONOS, Icono, iconoDe } from '../components/Icono';
 import { api } from './api';
 
 const mover = <T,>(arr: T[], i: number, dir: -1 | 1) => {
@@ -41,6 +42,18 @@ function Punto({
       <div className="adm-point__main">
         <Hora valor={item.hora} etiqueta="Horario" onChange={(hora) => set({ hora })} />
         <input className="adm-point__title" required maxLength={160} placeholder="Actividad" value={item.titulo} onChange={(e) => set({ titulo: e.target.value })} aria-label="Actividad" />
+        <label className="adm-icon-pick" title="Ícono">
+          {iconoDe(item.titulo, item.icono) ? <Icono nombre={iconoDe(item.titulo, item.icono)!} /> : <span className="adm-icon-none">—</span>}
+          <select aria-label="Ícono" value={item.icono ?? ''} onChange={(e) => set({ icono: e.target.value || undefined })}>
+            <option value="">Automático</option>
+            <option value="ninguno">Sin ícono</option>
+            {ICONOS.map((ic) => (
+              <option key={ic.id} value={ic.id}>
+                {ic.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
         <input maxLength={160} placeholder="Responsable (opcional)" value={item.responsable ?? ''} onChange={(e) => set({ responsable: e.target.value || undefined })} aria-label="Responsable" />
         <div className="adm-row-actions">
           <button type="button" className="adm-chip" disabled={primero} onClick={() => onMover(-1)} aria-label="Subir">

@@ -37,10 +37,10 @@ export function InvitationPage() {
             <RSVP
               onCambio={(estado, nota) => setDatos((d) => (d.invitado ? { ...d, invitado: { ...d.invitado, estado, nota } } : d))}
             />
-            <Entradas />
           </div>
         </section>
         <Agenda />
+        <Entradas />
       </main>
       <Footer />
     </DatosContext.Provider>

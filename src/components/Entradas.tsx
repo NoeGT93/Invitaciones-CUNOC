@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import type { MisEntradas } from '../data/tipos';
+import type { ConsultaEntradas, MisEntradas } from '../data/tipos';
 import { useDatos } from '../hooks/useInvitee';
-import { codigoLegible, descargar, etiquetaEntrada, qrSvg, ticketPng, urlAcceso } from '../utils/entradas';
+import { codigoLegible, descargar, entradasPdf, etiquetaEntrada, qrSvg, urlAcceso } from '../utils/entradas';
 import { fechaHoraCorta } from '../utils/formato';
 import { slugify } from '../utils/slugs';
 import { Ornament } from './Ornament';
@@ -16,160 +16,197 @@ function Qr({ codigo }: { codigo: string }) {
   );
 }
 
+async function post<T>(ruta: string, carne: string): Promise<T> {
+  const r = await fetch(`/api/entradas/${ruta}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ carne }),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(j?.error ?? 'No fue posible completar la solicitud.');
+  return j as T;
+}
+
+const acompanantesTexto = (n: number) => (n === 0 ? 'Sin acompañantes' : n === 1 ? '1 acompañante' : `${n} acompañantes`);
+
 /**
- * Apartado de la invitación general: cada maestrante escribe su carné y descarga
- * una entrada QR para sí y una para cada acompañante (un solo ingreso cada una).
+ * Generación de entradas para maestrantes (invitación general):
+ *  1. Escribe su carné → ve su nombre, grupo y acompañantes.
+ *  2. Confirma que es él → se generan UNA sola vez (solo el panel puede liberarlas).
+ *  3. Recibe un PDF con una página por persona; también se muestran en pantalla.
  */
 export function Entradas() {
   const { evento, invitado } = useDatos();
   const [carne, setCarne] = useState('');
-  const [datos, setDatos] = useState<MisEntradas | null>(null);
+  const [consulta, setConsulta] = useState<ConsultaEntradas | null>(null);
+  const [entradas, setEntradas] = useState<MisEntradas | null>(null);
+  const [pdf, setPdf] = useState<{ blob: Blob; nombre: string } | null>(null);
+  const [paso, setPaso] = useState<'' | 'buscando' | 'generando'>('');
   const [error, setError] = useState('');
-  const [cargando, setCargando] = useState(false);
-  const [generando, setGenerando] = useState<string | null>(null);
 
   if (invitado || !evento.entradasActivas) return null;
 
   async function buscar(e: FormEvent) {
     e.preventDefault();
-    setCargando(true);
+    setPaso('buscando');
+    setError('');
+    setConsulta(null);
+    try {
+      setConsulta(await post<ConsultaEntradas>('consultar', carne));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible consultar.');
+    } finally {
+      setPaso('');
+    }
+  }
+
+  async function generar() {
+    setPaso('generando');
     setError('');
     try {
-      const r = await fetch('/api/entradas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ carne }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error ?? 'No fue posible consultar sus entradas.');
-      setDatos(j);
+      const datos = await post<MisEntradas>('generar', carne);
+      setEntradas(datos);
+      const blob = await entradasPdf(datos.entradas, { acompanantes: datos.acompanantes, nombre: datos.nombre, evento });
+      const archivo = { blob, nombre: `entradas-cierre-maestria-${slugify(datos.nombre).split('-').slice(0, 2).join('-')}.pdf` };
+      setPdf(archivo);
+      descargar(archivo.blob, archivo.nombre);
     } catch (err) {
-      setDatos(null);
-      setError(err instanceof Error ? err.message : 'No fue posible consultar sus entradas.');
+      setError(err instanceof Error ? err.message : 'No fue posible generar sus entradas.');
     } finally {
-      setCargando(false);
+      setPaso('');
     }
   }
 
-  async function archivo(codigo: string, numero: number) {
-    const blob = await ticketPng({ codigo, numero, acompanantes: datos!.acompanantes, nombre: datos!.nombre, evento });
-    const nombre = `entrada-${slugify(datos!.nombre).split('-')[0]}-${numero === 0 ? 'maestrante' : `acompanante-${numero}`}.png`;
-    return { blob, nombre };
+  async function compartir() {
+    if (!pdf) return;
+    const file = new File([pdf.blob], pdf.nombre, { type: 'application/pdf' });
+    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Entradas · Cierre de Maestría CUNOC' }).catch(() => {});
+    else descargar(pdf.blob, pdf.nombre);
   }
 
-  async function bajar(codigo: string, numero: number) {
-    setGenerando(codigo);
-    try {
-      const { blob, nombre } = await archivo(codigo, numero);
-      descargar(blob, nombre);
-    } finally {
-      setGenerando(null);
-    }
-  }
-
-  /** En teléfonos: compartir directamente por WhatsApp con el acompañante. */
-  async function compartir(codigo: string, numero: number) {
-    setGenerando(codigo);
-    try {
-      const { blob, nombre } = await archivo(codigo, numero);
-      const file = new File([blob], nombre, { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Entrada · Cierre de Maestría CUNOC' }).catch(() => {});
-      } else descargar(blob, nombre);
-    } finally {
-      setGenerando(null);
-    }
-  }
-
-  async function bajarTodas() {
-    for (const e of datos!.entradas) {
-      await bajar(e.codigo, e.numero);
-      await new Promise((r) => setTimeout(r, 400)); // algunos navegadores bloquean descargas simultáneas
-    }
-  }
-
-  const puedeCompartir = typeof navigator !== 'undefined' && 'share' in navigator;
+  const reiniciar = () => (setConsulta(null), setCarne(''), setError(''));
 
   return (
-    <section className="tickets" id="entradas" aria-labelledby="titulo-entradas" data-reveal>
-      <div className="tickets__head">
-        <Ornament />
-        <p className="eyebrow eyebrow--gold">Maestrantes</p>
-        <h2 id="titulo-entradas" className="tickets__title">
-          Sus entradas
-        </h2>
-        <p className="tickets__text">
-          Escriba su número de carné para descargar su entrada y la de cada uno de sus acompañantes. Cada código QR es personal y
-          permite un solo ingreso.
-        </p>
-      </div>
+    <section className="tickets-section" aria-labelledby="titulo-entradas">
+      <div className="container">
+        <div className="tickets" id="entradas" data-reveal>
+          <div className="tickets__head">
+            <Ornament />
+            <p className="eyebrow eyebrow--gold">Maestrantes</p>
+            <h2 id="titulo-entradas" className="tickets__title">
+              Genere sus entradas
+            </h2>
+            <p className="tickets__text">
+              Con su número de carné obtendrá, en un solo PDF, su entrada y la de cada uno de sus acompañantes. Cada código QR es
+              personal y permite un solo ingreso.
+            </p>
+          </div>
 
-      <form className="tickets__form" onSubmit={buscar}>
-        <label className="tickets__field">
-          <span>Número de carné</span>
-          <input
-            inputMode="numeric"
-            autoComplete="off"
-            required
-            maxLength={20}
-            value={carne}
-            onChange={(e) => setCarne(e.target.value)}
-            placeholder="Ej. 201812345"
-          />
-        </label>
-        <button className="btn btn--primary" disabled={cargando}>
-          <span>{cargando ? 'Buscando…' : 'Ver mis entradas'}</span>
-        </button>
-      </form>
-      {error && (
-        <p className="tickets__error" role="alert">
-          {error}
-        </p>
-      )}
-
-      {datos && (
-        <div className="tickets__result" role="status">
-          <p className="tickets__who">
-            <strong>{datos.nombre}</strong>
-            <span>
-              {datos.grupo ? `Grupo No. ${datos.grupo} · ` : ''}
-              {datos.entradas.length === 1 ? '1 entrada' : `${datos.entradas.length} entradas`} · usted
-              {datos.acompanantes ? ` y ${datos.acompanantes === 1 ? '1 acompañante' : `${datos.acompanantes} acompañantes`}` : ''}
-            </span>
-          </p>
-
-          <ul className="tickets__grid">
-            {datos.entradas.map((e) => (
-              <li key={e.codigo} className={`ticket${e.ingreso ? ' is-used' : ''}`}>
-                <p className="ticket__type">{etiquetaEntrada(e.numero, datos.acompanantes)}</p>
-                <Qr codigo={e.codigo} />
-                <p className="ticket__code">{codigoLegible(e.codigo)}</p>
-                {e.ingreso ? (
-                  <p className="ticket__used">Utilizada · {fechaHoraCorta(e.ingreso)}</p>
-                ) : (
-                  <div className="ticket__actions">
-                    <button type="button" className="link" onClick={() => bajar(e.codigo, e.numero)} disabled={generando === e.codigo}>
-                      {generando === e.codigo ? 'Preparando…' : 'Descargar'}
-                    </button>
-                    {puedeCompartir && (
-                      <button type="button" className="link" onClick={() => compartir(e.codigo, e.numero)} disabled={generando === e.codigo}>
-                        Compartir
-                      </button>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          {datos.entradas.length > 1 && (
-            <button type="button" className="btn btn--ghost" onClick={bajarTodas} disabled={!!generando}>
-              <span>Descargar todas</span>
-            </button>
+          {/* Paso 1 · carné */}
+          {!consulta && !entradas && (
+            <form className="tickets__form" onSubmit={buscar}>
+              <label className="tickets__field">
+                <span>Número de carné</span>
+                <input inputMode="numeric" autoComplete="off" required maxLength={20} value={carne} onChange={(e) => setCarne(e.target.value)} placeholder="Ej. 201812345" />
+              </label>
+              <button className="btn btn--primary" disabled={paso === 'buscando'}>
+                <span>{paso === 'buscando' ? 'Buscando…' : 'Continuar'}</span>
+              </button>
+            </form>
           )}
-          <p className="tickets__note">Presente cada código en la entrada, desde el teléfono o impreso. Comparta cada entrada de acompañante solo con esa persona.</p>
+
+          {/* Paso 2 · datos y confirmación */}
+          {consulta && !entradas && (
+            <div className="tickets__confirm">
+              <dl className="tickets__facts">
+                <div className="tickets__fact tickets__fact--wide">
+                  <dt>Maestrante</dt>
+                  <dd>{consulta.nombre}</dd>
+                </div>
+                <div className="tickets__fact">
+                  <dt>Grupo</dt>
+                  <dd>{consulta.grupo ? `No. ${consulta.grupo}` : '—'}</dd>
+                </div>
+                <div className="tickets__fact">
+                  <dt>Invitados</dt>
+                  <dd>{acompanantesTexto(consulta.acompanantes)}</dd>
+                </div>
+              </dl>
+
+              {consulta.generadas ? (
+                <div className="tickets__note-box tickets__note-box--done" role="status">
+                  <p className="tickets__note-title">Sus entradas ya fueron generadas</p>
+                  <p>
+                    Se generaron el {fechaHoraCorta(consulta.generadas)}. Por seguridad no pueden generarse de nuevo. Si las perdió o no fue
+                    usted quien las generó, comuníquese con la Junta Directiva para que las libere.
+                  </p>
+                  <button type="button" className="link" onClick={reiniciar}>
+                    Consultar otro carné
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="tickets__note-box" role="note">
+                    <p className="tickets__note-title">Nota importante</p>
+                    <p>
+                      Confirme que usted es <strong>{consulta.nombre}</strong>. Sus entradas se generan <strong>una sola vez</strong>: después
+                      no podrán volver a generarse, a menos que la Junta Directiva las libere desde el panel. Guarde el PDF en su teléfono.
+                    </p>
+                  </div>
+                  <div className="tickets__actions">
+                    <button type="button" className="btn btn--primary" onClick={generar} disabled={paso === 'generando'}>
+                      <span>{paso === 'generando' ? 'Generando entradas…' : 'Sí, soy yo · Generar entradas'}</span>
+                    </button>
+                    <button type="button" className="btn btn--ghost" onClick={reiniciar} disabled={paso === 'generando'}>
+                      <span>No soy yo</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <p className="tickets__error" role="alert">
+              {error}
+            </p>
+          )}
+
+          {/* Paso 3 · PDF y vista en pantalla */}
+          {entradas && (
+            <div className="tickets__result" role="status">
+              <p className="tickets__who">
+                <strong>Entradas generadas</strong>
+                <span>
+                  {entradas.nombre}
+                  {entradas.grupo ? ` · Grupo No. ${entradas.grupo}` : ''} · {entradas.entradas.length}{' '}
+                  {entradas.entradas.length === 1 ? 'entrada' : 'entradas'}
+                </span>
+              </p>
+              <div className="tickets__actions">
+                <button type="button" className="btn btn--primary" onClick={() => pdf && descargar(pdf.blob, pdf.nombre)} disabled={!pdf}>
+                  <span>{pdf ? 'Descargar PDF' : 'Preparando PDF…'}</span>
+                </button>
+                {'share' in navigator && (
+                  <button type="button" className="btn btn--ghost" onClick={compartir} disabled={!pdf}>
+                    <span>Compartir PDF</span>
+                  </button>
+                )}
+              </div>
+              <p className="tickets__text">Si la descarga no inicia, guarde una captura de pantalla de cada entrada.</p>
+              <ul className="tickets__grid">
+                {entradas.entradas.map((e) => (
+                  <li key={e.codigo} className="ticket">
+                    <p className="ticket__type">{etiquetaEntrada(e.numero, entradas.acompanantes)}</p>
+                    <Qr codigo={e.codigo} />
+                    <p className="ticket__code">{codigoLegible(e.codigo)}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </section>
   );
 }

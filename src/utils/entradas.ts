@@ -1,6 +1,7 @@
 import qrcode from 'qrcode-generator';
 import type { Evento } from '../data/evento';
 import { fechaPartes, horaTexto } from './formato';
+import { pdfDeJpegs } from './pdf';
 
 /** Lo que se codifica en el QR: abre el control de acceso si se escanea con la cámara del teléfono. */
 export const urlAcceso = (codigo: string) => `${location.origin}/acceso?c=${codigo}`;
@@ -36,10 +37,10 @@ interface DatosTicket {
 }
 
 /**
- * Entrada en PNG (1080 × 1350, formato vertical para compartir por WhatsApp).
- * Se dibuja en el teléfono: no hay archivos generados en el servidor.
+ * Dibuja una entrada (1080 × 1350, vertical). Se genera en el teléfono:
+ * el servidor nunca crea ni guarda archivos.
  */
-export async function ticketPng({ codigo, numero, acompanantes, nombre, evento }: DatosTicket): Promise<Blob> {
+async function dibujarTicket({ codigo, numero, acompanantes, nombre, evento }: DatosTicket): Promise<HTMLCanvasElement> {
   await document.fonts.ready;
   const W = 1080;
   const H = 1350;
@@ -105,7 +106,22 @@ export async function ticketPng({ codigo, numero, acompanantes, nombre, evento }
   centro(`${evento.lugar}, ${evento.ciudad}`, 1232, `500 26px ${sans}`, MUTED);
   centro('Válida para una persona y un solo ingreso', 1290, `500 20px ${sans}`, GOLD_TXT, 1);
 
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('No se pudo crear la imagen'))), 'image/png'));
+  return c;
+}
+
+const aJpeg = (c: HTMLCanvasElement) =>
+  new Promise<Uint8Array>((res, rej) =>
+    c.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('No se pudo crear la imagen'))), 'image/jpeg', 0.92),
+  );
+
+/** Todas las entradas del maestrante en un solo PDF: una página por persona (15 × 19 cm aprox.). */
+export async function entradasPdf(entradas: { codigo: string; numero: number }[], datos: Omit<DatosTicket, 'codigo' | 'numero'>) {
+  const hojas = [];
+  for (const e of entradas) {
+    const c = await dibujarTicket({ ...datos, ...e });
+    hojas.push({ datos: await aJpeg(c), ancho: c.width, alto: c.height });
+  }
+  return pdfDeJpegs(hojas, { w: 432, h: 540 });
 }
 
 export function descargar(blob: Blob, nombre: string) {

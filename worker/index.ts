@@ -1,7 +1,7 @@
 /**
  * Worker de la invitación.
  *  Público:  GET  /api/invitacion?slug=&de=   POST /api/visita   POST /api/rsvp
- *            POST /api/entradas {carne}       GET  /evento.ics   GET /media/logo/:id
+ *            POST /api/entradas/consultar|generar {carne}   GET /evento.ics   GET /media/logo/:id
  *  Puerta:   /api/acceso/*  (PIN definido en el panel)
  *  Panel:    /api/admin/*   (contraseña en el secreto ADMIN_PASSWORD)
  * Todo lo demás lo sirven los Static Assets (SPA).
@@ -202,6 +202,7 @@ function validarAgenda(v: unknown): BloqueAgenda[] {
         return {
           hora: horario(it.hora as Record<string, unknown>, campo),
           titulo: requerido(it.titulo, 160, campo),
+          icono: texto(it.icono, 20, `${campo}: ícono`) ?? undefined,
           responsable: texto(it.responsable, 160, `${campo}: responsable`) ?? undefined,
           participaciones: part.length
             ? part.slice(0, 20).map((p: Record<string, unknown>) => ({
@@ -322,22 +323,49 @@ async function entradasDe(db: D1Database, maestranteId: number): Promise<Entrada
   return results;
 }
 
-/** Público: el maestrante obtiene sus entradas con su carné. */
-async function entradasPorCarne(req: Request, env: Env) {
+type FilaMaestrante = { id: number; nombre: string; grupo: number | null; acompanantes: number; entradas_generadas: string | null };
+
+/** Busca al maestrante por carné (limitado por IP para impedir probar carnés en serie). */
+async function maestrantePorCarne(req: Request, env: Env) {
   const clave = `carne:${ipDe(req)}`;
   await limitar(env.DB, clave, 15);
   const evento = await leerEvento(env.DB);
-  if (!evento.entradasActivas) throw new HttpError(403, 'La descarga de entradas aún no está disponible.');
+  if (!evento.entradasActivas) throw new HttpError(403, 'La generación de entradas aún no está disponible.');
   const carne = normalizarCarne((await cuerpo(req)).carne);
   if (carne.length < 4 || carne.length > 20) throw new HttpError(400, 'Escriba su número de carné.');
-  const m = await env.DB.prepare('SELECT id, nombre, grupo, acompanantes FROM maestrantes WHERE carne = ?')
+  const m = await env.DB.prepare('SELECT id, nombre, grupo, acompanantes, entradas_generadas FROM maestrantes WHERE carne = ?')
     .bind(carne)
-    .first<{ id: number; nombre: string; grupo: number | null; acompanantes: number }>();
+    .first<FilaMaestrante>();
   if (!m) {
     await registrarIntento(env.DB, clave);
     throw new HttpError(404, 'No encontramos ese carné. Verifíquelo o consulte con la Junta Directiva.');
   }
+  return m;
+}
+
+/** Paso 1: muestra nombre, grupo y acompañantes, sin revelar ningún código. */
+async function consultarEntradas(req: Request, env: Env) {
+  const m = await maestrantePorCarne(req, env);
+  return json({ nombre: m.nombre, grupo: m.grupo, acompanantes: m.acompanantes, generadas: m.entradas_generadas });
+}
+
+/** Paso 2: tras «Sí, soy yo», entrega los códigos UNA sola vez (atómico). */
+async function generarEntradas(req: Request, env: Env) {
+  const m = await maestrantePorCarne(req, env);
+  const r = await env.DB.prepare(`UPDATE maestrantes SET entradas_generadas = ${AHORA} WHERE id = ? AND entradas_generadas IS NULL`).bind(m.id).run();
+  if (!r.meta.changes) {
+    throw new HttpError(409, 'Sus entradas ya fueron generadas. Si necesita generarlas de nuevo, solicite a la Junta Directiva que las libere.');
+  }
   return json({ nombre: m.nombre, grupo: m.grupo, acompanantes: m.acompanantes, entradas: await entradasDe(env.DB, m.id) });
+}
+
+/** Panel: permite generar de nuevo. Los códigos sin usar cambian, así un PDF anterior deja de servir. */
+async function liberarEntradas(db: D1Database, id: number) {
+  const { results } = await db.prepare('SELECT id FROM entradas WHERE maestrante_id = ? AND ingreso IS NULL').bind(id).all<{ id: number }>();
+  await db.batch([
+    ...results.map((e) => db.prepare('UPDATE entradas SET codigo = ? WHERE id = ?').bind(aleatorio(8), e.id)),
+    db.prepare('UPDATE maestrantes SET entradas_generadas = NULL WHERE id = ?').bind(id),
+  ]);
 }
 
 // ─────────────────────────── Puerta (control de acceso) ───────────────────────────
@@ -494,7 +522,15 @@ async function guardarMaestrante(db: D1Database, b: Record<string, unknown>, id?
   }
   if (id) {
     await sincronizarEntradas(db, id, acompanantes);
-    await db.prepare('UPDATE maestrantes SET nombre = ?, grupo = ?, carne = ?, acompanantes = ? WHERE id = ?').bind(nombre, grupo, carne, acompanantes, id).run();
+    // Si cambió el número de acompañantes, el maestrante puede volver a generar su PDF (mismos códigos + los nuevos).
+    await db
+      .prepare(
+        `UPDATE maestrantes SET nombre = ?, grupo = ?, carne = ?,
+           entradas_generadas = CASE WHEN acompanantes = ? THEN entradas_generadas ELSE NULL END,
+           acompanantes = ? WHERE id = ?`,
+      )
+      .bind(nombre, grupo, carne, acompanantes, acompanantes, id)
+      .run();
     return id;
   }
   let slug = slugify(nombre).slice(0, 40) || 'maestrante';
@@ -614,6 +650,10 @@ async function admin(req: Request, env: Env, ruta: string) {
       }
       return json({ creados, actualizados, errores });
     }
+    if (m === 'POST' && id && accion === 'liberar') {
+      await liberarEntradas(db, idDe(id));
+      return json({ ok: true });
+    }
     if (m === 'POST' && id && accion === 'reiniciar') {
       await db.prepare('UPDATE entradas SET ingreso = NULL WHERE maestrante_id = ?').bind(idDe(id)).run();
       return json({ ok: true });
@@ -706,7 +746,8 @@ export default {
       if (p === '/api/invitacion' && req.method === 'GET') return json(await datosInvitacion(url, env));
       if (p === '/api/rsvp' && req.method === 'POST') return await rsvp(req, env);
       if (p === '/api/visita' && req.method === 'POST') return await visita(req, env);
-      if (p === '/api/entradas' && req.method === 'POST') return await entradasPorCarne(req, env);
+      if (p === '/api/entradas/consultar' && req.method === 'POST') return await consultarEntradas(req, env);
+      if (p === '/api/entradas/generar' && req.method === 'POST') return await generarEntradas(req, env);
       if (p.startsWith('/api/acceso/')) return await acceso(req, env, p.slice('/api/acceso/'.length).replace(/\/$/, ''));
       if (p.startsWith('/api/admin/')) return await admin(req, env, p.slice('/api/admin/'.length).replace(/\/$/, ''));
       if (p.startsWith('/media/logo/')) return await logo(p.split('/')[3], env);

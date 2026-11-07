@@ -1,5 +1,6 @@
 import type { ItemAgenda } from '../data/agenda';
 import { hora12, rangoTexto } from '../utils/formato';
+import { Icono, iconoDe } from './Icono';
 
 function Hora({ inicio, fin }: { inicio: string; fin?: string }) {
   const sufijo = hora12(fin ?? inicio).sufijo;
@@ -17,10 +18,18 @@ export function AgendaItem({ item, marcador }: { item: ItemAgenda; marcador?: st
   // Rango derivado de los subitems (sin inventar: primera hora y última hora dadas).
   const hora = item.hora ?? (sub?.[0]?.hora && { inicio: sub[0].hora.inicio, fin: sub[sub.length - 1].hora?.fin });
 
+  const icono = iconoDe(item.titulo, item.icono);
+
   return (
-    <li className={`tl__item${hora ? '' : ' tl__item--untimed'}`} data-reveal>
+    <li className={`tl__item${hora ? '' : ' tl__item--untimed'}${icono ? ' tl__item--icon' : ''}`} data-reveal>
       <div className="tl__when">{hora ? <Hora {...hora} /> : marcador && <span className="tl__marker">{marcador}</span>}</div>
-      <span className="tl__dot" aria-hidden="true" />
+      {icono ? (
+        <span className="tl__badge" aria-hidden="true">
+          <Icono nombre={icono} />
+        </span>
+      ) : (
+        <span className="tl__dot" aria-hidden="true" />
+      )}
       <div className="tl__body">
         <h4 className="tl__title">{item.titulo}</h4>
         {item.responsable && <p className="tl__who">{item.responsable}</p>}

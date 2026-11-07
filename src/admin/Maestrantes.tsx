@@ -91,6 +91,7 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
     return {
       maestrantes: l.length,
       sinCarne: l.filter((m) => !m.carne).length,
+      generaron: l.filter((m) => m.entradas_generadas).length,
       entradas: l.reduce((s, m) => s + m.entradas, 0),
       ingresados: l.reduce((s, m) => s + (m.ingresados ?? 0), 0),
     };
@@ -141,6 +142,15 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
     if (abierto === m.id) setEntradas(await api<EntradaPublica[]>(`entradas/${m.id}`).catch(() => []));
   }
 
+  async function liberar(m: MaestranteAdmin) {
+    if (!confirm(`¿Liberar las entradas de ${m.nombre}?
+
+Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de servir) y podrá generarlas de nuevo con su carné.`)) return;
+    await api(`maestrantes/${m.id}/liberar`, { method: 'POST' }).catch(fallo);
+    await cargar();
+    if (abierto === m.id) setEntradas(await api<EntradaPublica[]>(`entradas/${m.id}`).catch(() => []));
+  }
+
   async function reiniciarTodo() {
     if (!confirm('¿Anular TODOS los ingresos registrados? Úselo solo después de una prueba, nunca durante el evento.')) return;
     await api('entradas/reiniciar', { method: 'POST' }).catch(fallo);
@@ -164,8 +174,8 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
         <div>
           <h1 id="t-maestrantes">Maestrantes y entradas</h1>
           <p className="adm-muted">
-            Cada maestrante descarga desde la invitación general, con su carné, una entrada QR para sí y una por cada acompañante. Cada
-            entrada permite un solo ingreso.
+            Desde la invitación general, cada maestrante confirma su identidad con el carné y genera una sola vez un PDF con su entrada y
+            la de cada acompañante. Cada QR permite un solo ingreso. «Liberar entradas» permite generarlas de nuevo con códigos nuevos.
           </p>
         </div>
         <div className="adm-head__actions">
@@ -187,8 +197,11 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
           <dd>{stats.maestrantes}</dd>
         </div>
         <div className="adm-stat adm-stat--static adm-stat--pendiente">
-          <dt>Entradas emitidas</dt>
-          <dd>{stats.entradas}</dd>
+          <dt>Generaron su PDF</dt>
+          <dd>
+            {stats.generaron}
+            <small> / {stats.maestrantes}</small>
+          </dd>
         </div>
         <div className="adm-stat adm-stat--static adm-stat--confirmado">
           <dt>Ingresaron</dt>
@@ -304,6 +317,9 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
                 <span>
                   1 + {m.acompanantes} acompañante{m.acompanantes === 1 ? '' : 's'}
                 </span>
+                <span className={m.entradas_generadas ? 'adm-ok' : 'adm-muted'}>
+                  {m.entradas_generadas ? `PDF generado ${fechaHoraCorta(m.entradas_generadas)}` : 'Aún no genera su PDF'}
+                </span>
                 <span className={m.ingresados ? 'adm-ok' : 'adm-muted'}>
                   Ingresaron {m.ingresados ?? 0} de {m.entradas}
                 </span>
@@ -322,6 +338,11 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
                 >
                   Editar
                 </button>
+                {m.entradas_generadas && (
+                  <button className="adm-chip" onClick={() => liberar(m)}>
+                    Liberar entradas
+                  </button>
+                )}
                 {!!m.ingresados && (
                   <button className="adm-chip" onClick={() => reiniciar(m)}>
                     Anular ingresos

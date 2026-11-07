@@ -775,3 +775,47 @@
     text-align: left;
   }
 }
+
+.adm-icon-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--gold-text);
+}
+
+.adm-icon-pick .icono {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.adm-icon-none {
+  width: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.adm-icon-pick select {
+  min-height: 40px;
+  max-width: 8.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.adm-point__main {
+  grid-template-columns: auto minmax(0, 2fr) auto minmax(0, 1.2fr) auto;
+}
+
+@media (max-width: 52rem) {
+  .adm-point__main {
+    grid-template-columns: 1fr;
+  }
+}

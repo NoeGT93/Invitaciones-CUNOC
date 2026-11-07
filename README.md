@@ -37,13 +37,24 @@ Sin librerías de animación ni frameworks de UI.
 ## Entradas QR de maestrantes
 
 1. El panel registra a cada maestrante con su carné y cuántos acompañantes puede llevar.
-2. En la invitación general, el maestrante escribe su carné y obtiene **una entrada por persona**: la suya y una
-   por cada acompañante. Cada una se descarga como imagen (o se comparte directo por WhatsApp desde el teléfono).
-3. Cada QR permite **un solo ingreso**. Lleva debajo un código corto (`K3F9-X2MP`) por si hay que escribirlo a mano.
+2. Al final de la invitación general (antes de «Será un privilegio…»), el maestrante escribe su carné y ve su
+   nombre, grupo y número de invitados.
+3. Una nota le pide confirmar que es él: las entradas se generan **una sola vez**. Al pulsar «Sí, soy yo» recibe un
+   **PDF unificado** (una página por persona, con su QR) para descargar o compartir; también se muestran en pantalla.
+4. Si vuelve a intentarlo, se le indica la fecha en que ya se generaron. Solo el panel puede **liberarlas**:
+   al hacerlo, los códigos aún no usados **cambian**, de modo que un PDF anterior deja de servir.
+5. Cambiar el número de acompañantes en el panel también le permite generar el PDF de nuevo (con los mismos códigos
+   más los nuevos).
+6. Cada QR permite **un solo ingreso**. Lleva debajo un código corto (`K3F9-X2MP`) por si hay que escribirlo a mano.
 
 Las consultas de carné fallidas se limitan por conexión (15 cada 15 minutos) para impedir probar carnés en serie.
-Quien conozca el carné de otra persona podría descargar sus entradas; por eso el escáner muestra nombre y carné
-del maestrante, y ninguna entrada sirve dos veces.
+El PDF se crea en el teléfono del maestrante; el servidor no guarda archivos.
+
+## Íconos de la agenda
+
+Los puntos clave (bienvenida, himnos, presentaciones, preguntas, reconocimientos, pines, fotografía, proyección,
+brindis, mariachis, pastel y cena) llevan un ícono lineal asignado automáticamente según su título. En
+`/admin` → Agenda se puede elegir otro ícono o «Sin ícono» para cada punto.
 
 ## Control de acceso el día del evento (`/acceso`)
 

@@ -65,7 +65,16 @@ export interface EntradaPublica {
   ingreso: string | null;
 }
 
-/** Respuesta de POST /api/entradas */
+/** Respuesta de POST /api/entradas/consultar */
+export interface ConsultaEntradas {
+  nombre: string;
+  grupo: number | null;
+  acompanantes: number;
+  /** Fecha en que ya se generaron; null si aún puede generarlas. */
+  generadas: string | null;
+}
+
+/** Respuesta de POST /api/entradas/generar */
 export interface MisEntradas {
   nombre: string;
   grupo: number | null;
@@ -76,6 +85,7 @@ export interface MisEntradas {
 export interface MaestranteAdmin extends Maestrante {
   carne: string | null;
   acompanantes: number;
+  entradas_generadas: string | null;
   entradas: number;
   ingresados: number | null;
 }

@@ -29,6 +29,8 @@ export interface SubItem {
 export interface ItemAgenda {
   hora?: Horario;
   titulo: string;
+  /** Ícono: vacío = automático según el título; 'ninguno' = sin ícono. */
+  icono?: string;
   responsable?: string;
   participaciones?: Participacion[];
   subitems?: SubItem[];
