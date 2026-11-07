@@ -1,17 +1,21 @@
-import { evento, mensaje } from '../data/evento';
-import type { Maestrante } from '../data/maestrantes';
+import { useDatos } from '../hooks/useInvitee';
 import { fechaPartes } from '../utils/formato';
 import { Curves } from './Curves';
+import { Ornament } from './Ornament';
 
-export function Footer({ maestrante }: { maestrante?: Maestrante }) {
+export function Footer() {
+  const { evento, maestrante } = useDatos();
   const [entidad, ...resto] = evento.firma;
+  const f = fechaPartes(evento.fecha);
   return (
     <footer className="footer">
       <div className="container footer__inner">
         <p className="footer__closing" data-reveal>
-          {mensaje.cierre}
+          {evento.mensaje.cierre}
         </p>
-        <span className="rule rule--gold" aria-hidden="true" />
+        <div data-reveal>
+          <Ornament />
+        </div>
         <div className="footer__sign" data-reveal>
           <p className="footer__entity">{entidad}</p>
           {resto.map((l) => (
@@ -26,8 +30,13 @@ export function Footer({ maestrante }: { maestrante?: Maestrante }) {
           </p>
         )}
 
-        <p className="footer__date" aria-label={fechaPartes(evento.fecha).larga}>
-          {fechaPartes(evento.fecha).numerica}
+        <p className="footer__date" aria-label={f.larga} data-reveal>
+          {f.numerica.split(' · ').map((n, i) => (
+            <span key={i} style={{ '--i': i } as React.CSSProperties}>
+              {i > 0 && <span className="footer__dot">·</span>}
+              {n}
+            </span>
+          ))}
         </p>
       </div>
       <Curves className="curves--footer" />

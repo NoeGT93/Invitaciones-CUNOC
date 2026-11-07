@@ -1,12 +1,13 @@
 import { programaCierre } from '../data/agenda';
 import { AgendaItem } from './AgendaItem';
+import { Ornament } from './Ornament';
 
 export function ClosingProgram() {
   return (
     <div className="closing" aria-labelledby={programaCierre.id}>
       <div className="container">
         <div className="closing__transition" data-reveal>
-          <span className="rule rule--gold rule--grow" aria-hidden="true" />
+          <Ornament />
           {programaCierre.leyenda && <p className="closing__legend">{programaCierre.leyenda}</p>}
         </div>
         <div className="block">

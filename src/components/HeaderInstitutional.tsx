@@ -1,26 +1,13 @@
-import { useState } from 'react';
-import { LOGOS } from '../data/sitio';
+import { useDatos } from '../hooks/useInvitee';
 
-function Logo({ src, alt, ancho, alto }: (typeof LOGOS)[number]) {
-  const [falta, setFalta] = useState(false);
-  if (falta) {
-    // En desarrollo se marca el espacio y el archivo requerido; en producción se omite.
-    return import.meta.env.DEV ? (
-      <span className="logo logo--pendiente" title={`Falta ${src}`}>
-        {src.replace('/logos/', '')}
-      </span>
-    ) : null;
-  }
-  return (
-    <img className="logo" src={src} alt={alt} width={ancho} height={alto} decoding="async" fetchPriority="high" onError={() => setFalta(true)} />
-  );
-}
-
+/** Logotipos subidos desde /admin → Logotipos. Altura fija, proporción original. */
 export function HeaderInstitutional() {
+  const { logos } = useDatos();
+  if (!logos.length) return <div className="logos logos--vacio" aria-hidden="true" />;
   return (
     <header className="logos" aria-label="Instituciones organizadoras">
-      {LOGOS.map((l) => (
-        <Logo key={l.src} {...l} />
+      {logos.map((l) => (
+        <img key={l.id} className="logo" src={l.src} alt={l.alt} width={l.ancho} height={l.alto} decoding="async" fetchPriority="high" />
       ))}
     </header>
   );

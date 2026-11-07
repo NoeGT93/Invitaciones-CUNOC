@@ -36,3 +36,23 @@ export function fechaPartes(iso: string) {
     numerica: `${d} · ${m} · ${y}`,
   };
 }
+
+/** Días que faltan para la fecha ISO, según la hora de Guatemala. Negativo si ya pasó. */
+export function diasPara(iso: string, offset = '-06:00') {
+  const objetivo = new Date(`${iso}T00:00:00${offset}`).getTime();
+  const hoyGt = new Date(Date.now() + Number(offset.slice(0, 3)) * 3600_000);
+  const hoy = Date.UTC(hoyGt.getUTCFullYear(), hoyGt.getUTCMonth(), hoyGt.getUTCDate()) - Number(offset.slice(0, 3)) * 3600_000;
+  return Math.round((objetivo - hoy) / 86_400_000);
+}
+
+/** "2026-11-07T01:54:29Z" → "7 nov., 7:54 p. m." en hora de Guatemala (panel). */
+export function fechaHoraCorta(isoUtc: string | null) {
+  if (!isoUtc) return '';
+  return new Date(isoUtc.endsWith('Z') ? isoUtc : `${isoUtc.replace(' ', 'T')}Z`).toLocaleString('es-GT', {
+    timeZone: 'America/Guatemala',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

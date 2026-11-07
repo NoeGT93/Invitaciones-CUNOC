@@ -2,10 +2,23 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "invitaciones-cunoc",
   "compatibility_date": "2026-11-01",
-  // Sitio 100 % estático: no hay Worker con código, solo Static Assets.
+  // API (invitados, confirmaciones, administración y logotipos). El resto es estático.
+  "main": "./worker/index.ts",
   "assets": {
-    "directory": "./dist",
-    // Cualquier ruta sin archivo (p. ej. /invitacion/sergio-sum) devuelve index.html con estado 200.
-    "not_found_handling": "single-page-application"
-  }
+    // Con @cloudflare/vite-plugin el build del cliente se publica desde dist/client.
+    "binding": "ASSETS",
+    // Cualquier ruta sin archivo (p. ej. /invitacion/sergio-sum, /admin) devuelve index.html con estado 200.
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/media/*", "/evento.ics"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "invitaciones-cunoc",
+      "database_id": "872130d0-44b4-48fd-a387-717e99088c1b",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true }
+  // Secreto requerido: ADMIN_PASSWORD  →  npx wrangler secret put ADMIN_PASSWORD
 }

@@ -16,15 +16,15 @@ Este archivo no se importa en ningún componente ni se copia a `dist/`.
 | Tema | Situación | Dónde se corrige |
 | --- | --- | --- |
 | Horario de apertura | «Palabras de apertura» ocupa 4:10 – 4:15 con tres intervenciones y tres himnos, pero las presentaciones inician a las 4:15. Los himnos se muestran **sin horario**. | `src/data/agenda.ts` |
-| Hora de finalización | No confirmada. El `.ics` se genera sin `DTEND`. | `evento.horaFin` en `src/data/evento.ts` |
+| Hora de finalización | No confirmada. El `.ics` se genera sin `DTEND`. | `/admin` → Evento |
 | Comentarios finales / Fotografía oficial | Sin horario en la fuente. Se muestran sin hora. | `src/data/agenda.ts` |
 | Programa de cierre | Sin horarios en la fuente. Se numeran 01–07 (orden, no hora). | `src/data/agenda.ts` |
 | Raúl Bethancourt | Aparece sin título académico, a diferencia de MSc. Sergio Sum y Dr. Edgar Camposeco. Se dejó tal cual. | `src/data/agenda.ts` |
 | Mynor Antonio | Podría ser nombre incompleto. Se dejó tal cual. | `src/data/agenda.ts` |
-| Cargo del Dr. Edgar Camposeco | Desconocido; su invitación se muestra sin cargo. | `src/data/invitados.ts` |
-| Dirección y Google Maps de Gran Karmel | No proporcionados. El botón «Cómo llegar» queda oculto. | `src/data/evento.ts` |
-| Confirmación de asistencia | Sin medio definido. El botón queda oculto. | `evento.rsvp` |
-| Logotipos oficiales | Pendientes en `public/logos/`. | ver README |
+| Cargo del Dr. Edgar Camposeco | Desconocido; su invitación se muestra sin cargo. | `/admin` → Invitados |
+| Dirección y Google Maps de Gran Karmel | No proporcionados. El botón «Cómo llegar» queda oculto. | `/admin` → Evento |
+| Confirmación de asistencia | Activa desde cada enlace personal; se puede desactivar. | `/admin` → Evento |
+| Logotipos oficiales | Pendientes de subir. | `/admin` → Logotipos |
 
 ## Criterios de redacción aplicados
 

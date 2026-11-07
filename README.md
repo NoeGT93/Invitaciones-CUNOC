@@ -6,8 +6,41 @@ Centro Universitario de Occidente (CUNOC), Universidad de San Carlos de Guatemal
 
 Sábado 14 de noviembre de 2026 · 4:00 p. m. · Gran Karmel, Quetzaltenango.
 
-**Stack:** React + Vite + TypeScript + CSS, publicado como sitio estático en
-**Cloudflare Workers Static Assets** con Wrangler. Sin backend, sin base de datos, sin librerías de animación.
+**Stack:** React + Vite + TypeScript + CSS · Cloudflare Workers (Static Assets + API) · D1 (SQLite) · Wrangler.
+Sin librerías de animación ni frameworks de UI.
+
+| Ruta | Qué es |
+| --- | --- |
+| `/` | Invitación institucional genérica |
+| `/invitacion/<enlace>` | Invitación personal, con confirmación de asistencia |
+| `/admin` | Panel protegido con contraseña |
+
+---
+
+## Panel de administración (`/admin`)
+
+- **Invitados:** crear invitaciones individuales y obtener su enlace único (copiar o enviar por WhatsApp),
+  ver quién **confirmó**, quién **no asistirá**, quién **no ha respondido** y quién **no ha abierto** su
+  invitación. Búsqueda, filtros, edición, cambio manual de estado (p. ej. si alguien confirma por teléfono)
+  y exportación a CSV.
+- **Maestrantes:** quién extiende cada invitación (aparece discretamente al pie).
+- **Evento:** fecha, horas, lugar, dirección, Google Maps, confirmación (activar / fecha sugerida) y textos de la carta.
+- **Logotipos:** subir los archivos oficiales (PNG, SVG, WEBP o JPG, máx. 1 MB), ordenarlos y eliminarlos.
+
+Los enlaces nuevos llevan un sufijo aleatorio (`/invitacion/maria-lopez-k3f9`) para que nadie pueda adivinar
+el enlace de otra persona y responder en su nombre. Las vistas previas abiertas desde el panel (`?vista=admin`)
+no cuentan como apertura.
+
+### Contraseña del panel
+
+Se guarda como secreto de Cloudflare (nunca en el código):
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+```
+
+Use una frase larga. La sesión dura 12 horas; tras 10 intentos fallidos en 15 minutos, el acceso se bloquea
+temporalmente para esa IP. Cambiar el secreto cierra todas las sesiones.
 
 ---
 
@@ -15,144 +48,68 @@ Sábado 14 de noviembre de 2026 · 4:00 p. m. · Gran Karmel, Quetzaltenango.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+echo "ADMIN_PASSWORD=una-clave-local" > .dev.vars   # solo local; no se versiona
+npm run db:local                                     # crea las tablas en la base local
+npm run dev                                          # http://localhost:5173
 ```
 
-Rutas para probar:
-
-- `/` — invitación institucional genérica
-- `/invitacion/sergio-sum` — invitación personalizada
-- `/invitacion/sergio-sum?de=noe-escobar` — personalizada y extendida por un maestrante
-- `/invitacion/no-existe` — vuelve elegantemente a la versión genérica (nunca un error)
-
-## Build
+## Build y despliegue
 
 ```bash
-npm run build        # verifica tipos y genera dist/
+npm run build     # verifica tipos (app y Worker) y genera dist/
+npm run deploy    # build + migraciones D1 en producción + wrangler deploy
 ```
 
-## Cloudflare
+Primera vez en una cuenta nueva: `npx wrangler login`, crear la base con
+`npx wrangler d1 create invitaciones-cunoc` y copiar su `database_id` en `wrangler.jsonc`.
 
-```bash
-npx wrangler login   # solo la primera vez
-npm run preview      # build + servidor local de Workers (http://localhost:8787), igual a producción
-npm run deploy       # build + wrangler deploy
-```
-
-`wrangler.jsonc` publica `./dist` con `not_found_handling = "single-page-application"`:
-cualquier ruta como `/invitacion/sergio-sum` devuelve `index.html` (200) y se puede recargar sin 404.
-
-Después del **primer despliegue**, copie la URL que entrega Cloudflare en `URL_SITIO`
-(`src/data/sitio.ts`) y vuelva a desplegar. WhatsApp necesita esa URL absoluta para mostrar la vista previa.
-
-> No se usa `@cloudflare/vite-plugin`: el proyecto no tiene código de Worker, solo archivos estáticos,
-> y el plugin cambiaría la salida a `dist/client`. `npm run preview` ya ejecuta el runtime real de Workers.
+`wrangler.jsonc` usa `not_found_handling = "single-page-application"`: rutas como `/invitacion/…` o `/admin`
+devuelven `index.html` y pueden recargarse sin 404. Solo `/api/*`, `/media/*` y `/evento.ics` pasan por el Worker.
 
 ---
 
-## Agregar invitado
+## Dónde se edita cada cosa
 
-Editar **`src/data/invitados.ts`**:
-
-```ts
-{
-  slug: 'sergio-sum',               // URL: /invitacion/sergio-sum
-  tratamiento: 'MSc.',              // opcional
-  nombre: 'Sergio Sum',
-  cargo: 'Coordinador de Maestrías',// opcional
-  unidad: 'División de Ciencias Económicas',     // opcional
-  institucion: 'Centro Universitario de Occidente – CUNOC', // opcional
-  // mensaje: '…'                   // opcional: reemplaza el primer párrafo
-}
-```
-
-La redacción se adapta sola: con cargo, «Es un honor extenderle, en su calidad de Coordinador de
-Maestrías, una cordial invitación…»; sin cargo, la misma frase sin esa parte.
-Slug: minúsculas, sin tildes, palabras separadas por guiones.
-
-## Agregar maestrante
-
-Editar **`src/data/maestrantes.ts`**:
-
-```ts
-{ nombre: 'Noe Jeremías Escobar Bautista', slug: 'noe-escobar', grupo: 1 }
-```
-
-Con `?de=noe-escobar`, el pie de la invitación indica discretamente quién la extiende.
-
-## Generar enlaces
-
-```bash
-npm run generar-enlaces
-```
-
-Valida los slugs y crea `generated/enlaces-invitaciones.csv` (columnas: *Invitado, Cargo, Maestrante,
-URL personalizada*): un enlace por invitado y uno por cada combinación invitado × maestrante.
-El CSV no se versiona en Git porque contiene nombres.
-
-## Modificar agenda
-
-Editar **`src/data/agenda.ts`**. Horas en 24 h (`'16:05'`); la interfaz las muestra como «4:05 p. m.».
-Un punto sin `hora` aparece en la secuencia sin horario. Hay una inconsistencia documentada en el
-encabezado del archivo y en `docs/NOTAS-INTERNAS.md`.
-
-## Cambiar información del evento
-
-Editar **`src/data/evento.ts`**: título, fecha, hora de inicio, `horaFin`, lugar, dirección,
-`mapsUrl` (activa «Cómo llegar»), `rsvp` (activa «Confirmar asistencia»), descripción y firma.
-El archivo `/evento.ics` se genera automáticamente desde estos datos en cada build.
-
-Metadatos para WhatsApp / redes: **`src/data/sitio.ts`**.
-
----
-
-## Logotipos oficiales (pendiente)
-
-Colocar los archivos oficiales en `public/logos/` con estos nombres (o cambiar la ruta en `LOGOS`,
-`src/data/sitio.ts`, junto con su ancho y alto reales):
-
-| Archivo | Logotipo |
+| Qué | Dónde |
 | --- | --- |
-| `public/logos/usac-escudo.png` | Escudo de la Universidad de San Carlos de Guatemala |
-| `public/logos/cunoc.png` | Identidad USAC / CUNOC |
-| `public/logos/sep-cunoc.png` | Departamento de Estudios de Postgrado – SEP CUNOC |
-
-Se aceptan PNG, SVG o WEBP con fondo transparente. Se muestran con altura fija y proporción original
-(nunca se deforman). En `npm run dev`, un logo faltante se marca con un recuadro punteado y el nombre del archivo;
-en producción simplemente se omite.
-
-## Imagen para WhatsApp
-
-`public/og/og-invitacion.png` (1200 × 630) es general y no contiene datos de ningún invitado,
-porque los enlaces pueden reenviarse. Su fuente editable es `public/og/og-source.svg`:
-
-```bash
-npx sharp-cli -i public/og/og-source.svg -o public/og/og-invitacion.png -f png
-```
+| Invitados, maestrantes, confirmaciones, logotipos | Panel `/admin` (base D1) |
+| Fecha, hora, lugar, Maps, textos de la carta | Panel `/admin` → Evento (valores por defecto en `src/data/evento.ts`) |
+| Agenda / programa | `src/data/agenda.ts` (ver la nota de horarios en el encabezado) |
+| Título y descripción para WhatsApp, URL pública | `src/data/sitio.ts` |
+| Imagen para WhatsApp | `public/og/og-invitacion.png` (fuente: `og-source.svg`) |
+| Esquema de la base | `migrations/` |
 
 ## Estructura
 
 ```
+worker/index.ts          API: invitación pública, confirmación, visitas, .ics, logotipos y panel
+migrations/              esquema D1 y datos iniciales
 src/
-  data/        ← todo el contenido editable (evento, agenda, invitados, maestrantes, sitio)
-  components/  ← presentación (sin textos de contenido fijos)
-  hooks/       ← useInvitee (ruta + ?de=), useReveal (aparición en viewport)
-  utils/       ← calendar (.ics), formato (fechas/horas), redaccion, slugs
-  styles/      ← variables.css (paleta y escala), globals.css
-scripts/generar-enlaces.ts
-docs/NOTAS-INTERNAS.md   ← logística y pendientes (no se publica)
+  admin/                 panel (se descarga solo al visitar /admin)
+  components/            invitación (Intro, Hero, RSVP, Agenda, Footer…)
+  data/                  evento (valores por defecto), agenda, sitio, tipos compartidos
+  hooks/                 useInvitee (carga de datos), useReveal (aparición en pantalla)
+  utils/                 calendar (.ics), formato, redaccion, slugs
+  styles/                variables.css (paleta y escala), globals.css
+docs/NOTAS-INTERNAS.md   logística y pendientes (no se publica)
 ```
 
-## Accesibilidad y rendimiento
+## Movimiento
 
-HTML semántico, contraste AA (el dorado decorativo `--gold` no se usa para texto pequeño; para eso
-existe `--gold-text`), foco visible, enlace para saltar al programa, objetivos táctiles ≥ 44 px y
-`prefers-reduced-motion`. Animaciones solo con CSS + IntersectionObserver. Fuentes autoalojadas
-(Cormorant Garamond + Manrope) con `font-display: swap`.
+Velo de apertura breve (cubre también la carga de los datos personalizados), titular que emerge por líneas,
+ornamentos que se dibujan, curvas que se trazan y respiran lentamente, puntos del programa que aparecen al
+leer y riel que se dibuja con el scroll (en navegadores compatibles). Todo con CSS + IntersectionObserver
+y desactivado con `prefers-reduced-motion`.
 
-## Solución de problemas
+## Privacidad
 
-- **`npm run preview` falla con `SQLITE_CANTOPEN` en Windows:** la ruta del proyecto es demasiado larga.
-  Mueva el proyecto a una ruta corta o use `npx wrangler dev --persist-to C:/tmp/wrangler`.
-- **WhatsApp muestra una vista previa antigua:** WhatsApp guarda caché; pruebe la URL en
-  <https://developers.facebook.com/tools/debug/> para forzar la actualización.
+Los nombres de los invitados ya no viajan en el código del sitio: cada enlace solo recibe los datos de su
+propio invitado. La imagen para WhatsApp es general y nunca muestra nombres.
+
+## Solución de problemas (Windows)
+
+- **`SQLITE_CANTOPEN` o `spawn workerd.exe ENOENT`:** la ruta del proyecto es demasiado larga. Mueva el
+  proyecto a una ruta corta (p. ej. `C:\proyectos\invitaciones-cunoc`) o defina
+  `WRANGLER_PERSIST=C:/tmp/wrangler` y use `--persist-to C:/tmp/wrangler` en `npm run db:local`.
+- **WhatsApp muestra una vista previa antigua:** fuerce la actualización en
+  <https://developers.facebook.com/tools/debug/>.
