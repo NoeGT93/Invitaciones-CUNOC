@@ -7,7 +7,7 @@
  * Cloudflare (p. ej. https://invitaciones-cunoc.<subdominio>.workers.dev)
  * o con el dominio propio, si se configura uno.
  */
-export const URL_SITIO = 'https://invitaciones-cunoc.workers.dev';
+export const URL_SITIO = 'https://invitaciones-cunoc.nescobar1993.workers.dev';
 
 /**
  * Logotipos oficiales de la cabecera. Colocar los archivos en /public/logos/.
