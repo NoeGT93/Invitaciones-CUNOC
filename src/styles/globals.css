@@ -122,6 +122,7 @@ h2 {
 
 /* ───────────────── Hero ───────────────── */
 .hero {
+  --curves-h: clamp(4.5rem, 3rem + 6vw, 9rem);
   position: relative;
   min-height: 100svh;
   display: flex;
@@ -303,6 +304,8 @@ h2 {
 .hero__frame {
   position: absolute;
   inset: clamp(0.6rem, 0.3rem + 1.2vw, 1.25rem);
+  /* El marco cierra justo encima de las curvas: nunca se cruzan */
+  bottom: calc(var(--curves-h) + 0.5rem);
   border: 1px solid rgb(201 148 43 / 0.32);
   pointer-events: none;
   z-index: -1;
@@ -517,7 +520,7 @@ h2 {
 .curves__blue { stroke: var(--blue-light); stroke-width: 1; opacity: 0.8; }
 .curves__gold { stroke: var(--gold); stroke-width: 1.25; }
 
-.curves--hero { bottom: 0; }
+.curves--hero { bottom: 0; height: var(--curves-h); }
 .curves--footer { bottom: 0; transform: scaleX(-1); opacity: 0.9; }
 
 /* ───────────────── Barra superior ───────────────── */
@@ -599,7 +602,6 @@ h2 {
 /* ───────────────── Información ───────────────── */
 .info {
   padding-block: var(--section);
-  border-top: 1px solid var(--border);
 }
 
 .info__inner {
