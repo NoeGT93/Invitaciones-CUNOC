@@ -79,6 +79,8 @@ export interface MisEntradas {
   nombre: string;
   grupo: number | null;
   acompanantes: number;
+  /** Momento de la generación; identifica la versión vigente de los códigos. */
+  generadas?: string;
   entradas: EntradaPublica[];
 }
 

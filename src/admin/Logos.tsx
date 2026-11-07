@@ -95,11 +95,11 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
       }
       const { form, cambio } = await preparar(original, true);
       if (!cambio) {
-        setAviso(`«${l.alt}» ya estaba limpio.`);
+        setAviso(`«${l.alt}» ya estaba optimizado.`);
         return;
       }
       setLista(await api<Logo[]>(`logos/${l.id}/archivo`, { form }));
-      setAviso(`Listo: se quitó el fondo y los márgenes de «${l.alt}».`);
+      setAviso(`Listo: «${l.alt}» quedó optimizado.`);
     } catch (err) {
       onError(err);
       setError(err instanceof Error ? err.message : 'No se pudo ajustar');
@@ -193,7 +193,7 @@ export function Logos({ onError }: { onError: (e: unknown) => void }) {
                   →
                 </button>
                 <button className="adm-chip" onClick={() => ajustar(l)} disabled={ajustando !== null}>
-                  {ajustando === l.id ? 'Ajustando…' : 'Quitar fondo y márgenes'}
+                  {ajustando === l.id ? 'Optimizando…' : 'Optimizar (fondo, márgenes y peso)'}
                 </button>
                 <button className="adm-chip adm-chip--danger" onClick={() => eliminar(l)}>
                   Eliminar

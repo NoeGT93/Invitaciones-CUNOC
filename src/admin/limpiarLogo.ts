@@ -5,7 +5,7 @@
  *  2. Recorta los márgenes vacíos, para que todos los escudos ocupen su espacio por igual.
  * Se ejecuta en el navegador del panel; el servidor solo recibe el PNG final.
  */
-const MAX = 1000; // px del lado mayor: nítido en pantallas retina y liviano
+const MAX = 480; // px del lado mayor: se muestra a ~108 px, así es nítido en retina y liviano
 const TOLERANCIA = 42; // diferencia de color admitida respecto al fondo (0–441)
 
 export async function limpiarLogo(origen: Blob): Promise<{ blob: Blob; ancho: number; alto: number; cambio: boolean }> {
@@ -25,7 +25,7 @@ export async function limpiarLogo(origen: Blob): Promise<{ blob: Blob; ancho: nu
   const dist = (i: number) => Math.hypot(px[i] - ref[0], px[i + 1] - ref[1], px[i + 2] - ref[2]);
   const fondoUniforme = esquinas.every((e) => e[3] > 200 && Math.hypot(e[0] - ref[0], e[1] - ref[1], e[2] - ref[2]) < TOLERANCIA);
 
-  let cambio = false;
+  let cambio = escala < 1; // reducir un archivo pesado ya es una mejora
   if (fondoUniforme) {
     const visto = new Uint8Array(w * h);
     const pila: number[] = [];

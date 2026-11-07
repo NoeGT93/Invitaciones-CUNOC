@@ -328,7 +328,9 @@ type FilaMaestrante = { id: number; nombre: string; grupo: number | null; acompa
 /** Busca al maestrante por carné (limitado por IP para impedir probar carnés en serie). */
 async function maestrantePorCarne(req: Request, env: Env) {
   const clave = `carne:${ipDe(req)}`;
-  await limitar(env.DB, clave, 15);
+  // 40 carnés INCORRECTOS por conexión cada 15 min: muchos estudiantes comparten IP (datos móviles,
+  // Wi-Fi del campus), así que el límite no debe bloquear a los legítimos; sigue frenando la prueba en serie.
+  await limitar(env.DB, clave, 40);
   const evento = await leerEvento(env.DB);
   if (!evento.entradasActivas) throw new HttpError(403, 'La generación de entradas aún no está disponible.');
   const carne = normalizarCarne((await cuerpo(req)).carne);
@@ -352,11 +354,21 @@ async function consultarEntradas(req: Request, env: Env) {
 /** Paso 2: tras «Sí, soy yo», entrega los códigos UNA sola vez (atómico). */
 async function generarEntradas(req: Request, env: Env) {
   const m = await maestrantePorCarne(req, env);
-  const r = await env.DB.prepare(`UPDATE maestrantes SET entradas_generadas = ${AHORA} WHERE id = ? AND entradas_generadas IS NULL`).bind(m.id).run();
-  if (!r.meta.changes) {
+  const r = await env.DB.prepare(
+    `UPDATE maestrantes SET entradas_generadas = ${AHORA} WHERE id = ? AND entradas_generadas IS NULL RETURNING entradas_generadas`,
+  )
+    .bind(m.id)
+    .first<{ entradas_generadas: string }>();
+  if (!r) {
     throw new HttpError(409, 'Sus entradas ya fueron generadas. Si necesita generarlas de nuevo, solicite a la Junta Directiva que las libere.');
   }
-  return json({ nombre: m.nombre, grupo: m.grupo, acompanantes: m.acompanantes, entradas: await entradasDe(env.DB, m.id) });
+  return json({
+    nombre: m.nombre,
+    grupo: m.grupo,
+    acompanantes: m.acompanantes,
+    generadas: r.entradas_generadas,
+    entradas: await entradasDe(env.DB, m.id),
+  });
 }
 
 /** Panel: permite generar de nuevo. Los códigos sin usar cambian, así un PDF anterior deja de servir. */
@@ -665,6 +677,17 @@ async function admin(req: Request, env: Env, ruta: string) {
   }
 
   if (recurso === 'entradas') {
+    // Lista completa para la puerta (respaldo sin internet): una fila por entrada.
+    if (m === 'GET' && !id) {
+      const { results } = await db
+        .prepare(
+          `SELECT m.nombre, m.carne, m.grupo, m.acompanantes, e.numero, e.codigo, e.ingreso
+           FROM entradas e JOIN maestrantes m ON m.id = e.maestrante_id
+           ORDER BY m.grupo IS NULL, m.grupo, m.nombre, e.numero`,
+        )
+        .all();
+      return json(results);
+    }
     if (m === 'GET' && id) return json(await entradasDe(db, idDe(id)));
     if (m === 'POST' && id === 'reiniciar') {
       await db.prepare('UPDATE entradas SET ingreso = NULL').run();

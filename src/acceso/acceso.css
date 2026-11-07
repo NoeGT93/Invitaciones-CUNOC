@@ -352,3 +352,5 @@ form.pta-manual {
   min-height: 48px;
   border-top: 1px solid rgb(252 251 248 / 0.1);
 }
+
+.pta-result--sinred { background: #5a3d0c; }

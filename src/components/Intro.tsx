@@ -1,8 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Ornament } from './Ornament';
 
-const MINIMO = 1150; // ms: lo justo para leer la marca sin hacer esperar
-const MAXIMO = 2600; // ms: nunca bloquea si la red es lenta
+const MINIMO = 800; // ms: lo justo para leer la marca sin hacer esperar
+const MAXIMO = 2200; // ms: nunca bloquea si la red es lenta
+
+/** Se muestra una vez por visita: al recargar o volver, la invitación aparece de inmediato. */
+function yaVista() {
+  try {
+    if (sessionStorage.getItem('intro-vista')) return true;
+    sessionStorage.setItem('intro-vista', '1');
+  } catch {
+    /* sin almacenamiento: se muestra */
+  }
+  return false;
+}
 
 /**
  * Apertura breve: filete dorado y marca; luego el velo se levanta.
@@ -11,7 +22,7 @@ const MAXIMO = 2600; // ms: nunca bloquea si la red es lenta
 export function Intro({ listo, onFin }: { listo: boolean; onFin: () => void }) {
   const [minimo, setMinimo] = useState(false);
   const [fase, setFase] = useState<'visible' | 'saliendo' | 'oculto'>(() =>
-    matchMedia('(prefers-reduced-motion: reduce)').matches ? 'oculto' : 'visible',
+    matchMedia('(prefers-reduced-motion: reduce)').matches || yaVista() ? 'oculto' : 'visible',
   );
 
   useEffect(() => {

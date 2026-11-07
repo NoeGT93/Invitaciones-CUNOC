@@ -150,6 +150,25 @@ y desactivado con `prefers-reduced-motion`.
 Los nombres de los invitados ya no viajan en el código del sitio: cada enlace solo recibe los datos de su
 propio invitado. La imagen para WhatsApp es general y nunca muestra nombres.
 
+## Lanzamiento y día del evento
+
+Probado con 70 maestrantes / 238 entradas: carga por lotes, generación y escaneo simultáneo desde dos
+teléfonos (cada entrada aceptada exactamente una vez).
+
+- **Carga desde Excel:** se envía en lotes de 3 filas (el plan gratuito de Cloudflare admite 50 consultas a la
+  base por petición). Un error en una fila no detiene las demás; el informe final dice cuáles revisar.
+- **Puerta sin señal:** el escáner muestra «Sin conexión» con «Reintentar», nunca «Código no válido». Si un
+  reintento devuelve «Ya utilizada» de hace segundos, es el mismo ingreso: puede pasar.
+- **Respaldo en papel:** Maestrantes y entradas → «Lista para la puerta» (CSV con todos los códigos por grupo).
+- **Entradas perdidas:** se guardan en el teléfono de quien las generó; desde ese teléfono puede volver a
+  descargarlas. Desde otro dispositivo hace falta «Liberar entradas» (los códigos sin usar cambian).
+- **Carnés incorrectos:** máximo 40 por conexión cada 15 minutos (permite que muchos estudiantes compartan red).
+- **Logotipos:** «Optimizar» reduce cada archivo a 480 px (se muestran a ~108 px) para que la invitación cargue rápido.
+
+Lista previa: logotipos optimizados · maestrantes cargados con carné · PIN de la puerta · ensayo con dos
+teléfonos reales (Android y iPhone) · «Anular todos los ingresos» después del ensayo · lista para la puerta
+impresa · señal de datos verificada en el lugar.
+
 ## Solución de problemas (Windows)
 
 - **`SQLITE_CANTOPEN` o `spawn workerd.exe ENOENT`:** la ruta del proyecto es demasiado larga. Mueva el

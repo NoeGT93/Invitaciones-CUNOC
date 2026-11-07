@@ -17,14 +17,41 @@ function Qr({ codigo }: { codigo: string }) {
 }
 
 async function post<T>(ruta: string, carne: string): Promise<T> {
-  const r = await fetch(`/api/entradas/${ruta}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ carne }),
-  });
+  let r: Response;
+  try {
+    r = await fetch(`/api/entradas/${ruta}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ carne }),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    throw new Error('No hay conexión en este momento. Revise su internet e inténtelo de nuevo.');
+  }
   const j = await r.json().catch(() => null);
-  if (!r.ok) throw new Error(j?.error ?? 'No fue posible completar la solicitud.');
+  if (!r.ok) throw new Error(j?.error ?? 'No fue posible completar la solicitud. Inténtelo de nuevo en unos minutos.');
   return j as T;
+}
+
+/**
+ * Copia de las entradas en ESTE teléfono: si el maestrante cierra la página o falla la descarga,
+ * puede recuperarlas sin que la Junta tenga que liberarlas. Nunca se envía a ningún lado.
+ */
+const claveLocal = (carne: string) => `entradas:${carne.replace(/[\s.\-]/g, '').toUpperCase()}`;
+function guardarLocal(carne: string, datos: MisEntradas) {
+  try {
+    localStorage.setItem(claveLocal(carne), JSON.stringify(datos));
+  } catch {
+    /* almacenamiento bloqueado (modo privado): se sigue sin copia local */
+  }
+}
+function leerLocal(carne: string): MisEntradas | null {
+  try {
+    const v = localStorage.getItem(claveLocal(carne));
+    return v ? (JSON.parse(v) as MisEntradas) : null;
+  } catch {
+    return null;
+  }
 }
 
 const acompanantesTexto = (n: number) => (n === 0 ? 'Sin acompañantes' : n === 1 ? '1 acompañante' : `${n} acompañantes`);
@@ -60,22 +87,36 @@ export function Entradas() {
     }
   }
 
+  /** Muestra las entradas y arma el PDF. Si el PDF falla, las entradas siguen en pantalla. */
+  async function mostrar(datos: MisEntradas) {
+    setEntradas(datos);
+    try {
+      const blob = await entradasPdf(datos.entradas, { acompanantes: datos.acompanantes, nombre: datos.nombre, evento });
+      const archivo = { blob, nombre: `entradas-cierre-maestria-${slugify(datos.nombre).split('-').slice(0, 2).join('-')}.pdf` };
+      setPdf(archivo);
+      descargar(archivo.blob, archivo.nombre);
+    } catch {
+      setError('Sus entradas están listas abajo, pero este navegador no pudo crear el PDF. Guarde una captura de cada código QR.');
+    }
+  }
+
   async function generar() {
     setPaso('generando');
     setError('');
     try {
       const datos = await post<MisEntradas>('generar', carne);
-      setEntradas(datos);
-      const blob = await entradasPdf(datos.entradas, { acompanantes: datos.acompanantes, nombre: datos.nombre, evento });
-      const archivo = { blob, nombre: `entradas-cierre-maestria-${slugify(datos.nombre).split('-').slice(0, 2).join('-')}.pdf` };
-      setPdf(archivo);
-      descargar(archivo.blob, archivo.nombre);
+      guardarLocal(carne, datos); // antes que nada: así no se pierden aunque falle lo siguiente
+      await mostrar(datos);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No fue posible generar sus entradas.');
     } finally {
       setPaso('');
     }
   }
+
+  // Solo la copia de la generación vigente: si la Junta liberó y se generaron de nuevo, la vieja no sirve.
+  const local = consulta?.generadas ? leerLocal(carne) : null;
+  const copiaLocal = local && local.generadas === consulta?.generadas ? local : null;
 
   async function compartir() {
     if (!pdf) return;
@@ -133,7 +174,17 @@ export function Entradas() {
                 </div>
               </dl>
 
-              {consulta.generadas ? (
+              {consulta.generadas && copiaLocal ? (
+                <div className="tickets__note-box tickets__note-box--done" role="status">
+                  <p className="tickets__note-title">Sus entradas están guardadas en este teléfono</p>
+                  <p>Las generó el {fechaHoraCorta(consulta.generadas)} desde este dispositivo. Puede verlas y descargarlas de nuevo.</p>
+                  <div className="tickets__actions">
+                    <button type="button" className="btn btn--primary" onClick={() => mostrar(copiaLocal)}>
+                      <span>Ver y descargar mis entradas</span>
+                    </button>
+                  </div>
+                </div>
+              ) : consulta.generadas ? (
                 <div className="tickets__note-box tickets__note-box--done" role="status">
                   <p className="tickets__note-title">Sus entradas ya fueron generadas</p>
                   <p>

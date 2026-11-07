@@ -78,6 +78,7 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
   const [busqueda, setBusqueda] = useState('');
   const [error, setError] = useState('');
 
+  const [progreso, setProgreso] = useState('');
   const fallo = (e: unknown) => (onError(e), setError(e instanceof Error ? e.message : 'Error'));
   const cargar = () => api<MaestranteAdmin[]>('maestrantes').then(setLista).catch(fallo);
 
@@ -116,14 +117,50 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
     }
   }
 
+  /**
+   * Se envía en grupos de 3 filas: Cloudflare (plan gratuito) admite 50 consultas a la base por
+   * petición y cada fila usa varias. Así se pueden cargar cientos sin cortes; un error en una fila
+   * no detiene las demás y se informa al final.
+   */
   async function procesarImportacion() {
     const filas = leerFilas(importar ?? '');
     if (!filas.length) return setError('No se encontraron filas.');
     setError('');
+    const total = { creados: 0, actualizados: 0, errores: [] as string[] };
+    const LOTE = 3;
+    for (let i = 0; i < filas.length; i += LOTE) {
+      setProgreso(`Cargando ${Math.min(i + LOTE, filas.length)} de ${filas.length}…`);
+      const lote = filas.slice(i, i + LOTE);
+      try {
+        const r = await api<{ creados: number; actualizados: number; errores: string[] }>('maestrantes/importar', { body: { filas: lote } });
+        total.creados += r.creados;
+        total.actualizados += r.actualizados;
+        total.errores.push(...r.errores.map((e) => e.replace(/^Fila (\d+)/, (_, n) => `Fila ${i + Number(n)}`)));
+      } catch (err) {
+        onError(err);
+        total.errores.push(`Filas ${i + 1}–${i + lote.length}: ${err instanceof Error ? err.message : 'error'} (vuelva a cargarlas)`);
+        if ((err as { status?: number }).status === 401) break;
+      }
+    }
+    setProgreso('');
+    setInforme(total);
+    setImportar(null);
+    await cargar();
+  }
+
+  /** Respaldo en papel para la puerta: todas las entradas con su código, por grupo. */
+  async function listaPuerta() {
     try {
-      setInforme(await api('maestrantes/importar', { body: { filas } }));
-      setImportar(null);
-      await cargar();
+      const filas = await api<{ nombre: string; carne: string | null; grupo: number | null; acompanantes: number; numero: number; codigo: string; ingreso: string | null }[]>('entradas');
+      const c = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lineas = [
+        ['Grupo', 'Maestrante', 'Carné', 'Entrada', 'Código', 'Ingresó'],
+        ...filas.map((f) => [f.grupo, f.nombre, f.carne, etiquetaEntrada(f.numero, f.acompanantes), codigoLegible(f.codigo), fechaHoraCorta(f.ingreso)]),
+      ];
+      const blob = new Blob(['﻿' + lineas.map((l) => l.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'lista-puerta-entradas.csv' });
+      a.click();
+      URL.revokeObjectURL(a.href);
     } catch (err) {
       fallo(err);
     }
@@ -181,6 +218,9 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
         <div className="adm-head__actions">
           <button className="adm-btn" onClick={() => lista && exportarCsv(lista)} disabled={!lista?.length}>
             Exportar CSV
+          </button>
+          <button className="adm-btn" onClick={listaPuerta} disabled={!lista?.length} title="Todas las entradas con su código, para tener un respaldo impreso en la puerta">
+            Lista para la puerta
           </button>
           <button className="adm-btn" onClick={() => (setImportar(''), setBorrador(null), setInforme(null))}>
             Cargar desde Excel
@@ -251,11 +291,12 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
           />
           <p className="adm-muted">{leerFilas(importar).length} fila(s) detectadas.</p>
           <div className="adm-form__actions">
-            <button className="adm-btn" onClick={() => setImportar(null)}>
+            {progreso && <span className="adm-muted" role="status">{progreso}</span>}
+            <button className="adm-btn" onClick={() => setImportar(null)} disabled={!!progreso}>
               Cancelar
             </button>
-            <button className="adm-btn adm-btn--primary" onClick={procesarImportacion} disabled={!leerFilas(importar).length}>
-              Cargar
+            <button className="adm-btn adm-btn--primary" onClick={procesarImportacion} disabled={!leerFilas(importar).length || !!progreso}>
+              {progreso ? 'Cargando…' : 'Cargar'}
             </button>
           </div>
         </div>

@@ -10,16 +10,50 @@ import './acceso.css';
  * Dos o más teléfonos pueden escanear a la vez: el servidor nunca registra dos veces la misma entrada.
  */
 
+/** status 0 = sin conexión o sin respuesta en 10 s (nunca se confunde con un código inválido). */
 async function api<T>(ruta: string, body?: unknown): Promise<T> {
-  const r = await fetch(`/api/acceso/${ruta}`, {
-    method: body ? 'POST' : 'GET',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let r: Response;
+  try {
+    r = await fetch(`/api/acceso/${ruta}`, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw Object.assign(new Error('Sin conexión'), { status: 0 });
+  }
   const j = await r.json().catch(() => null);
   if (!r.ok) throw Object.assign(new Error(j?.error ?? `Error ${r.status}`), { status: r.status });
   return j as T;
 }
+
+/** Tono corto: agudo = válido; grave doble = revisar. Funciona aunque el iPhone no vibre. */
+let audio: AudioContext | undefined;
+function activarSonido() {
+  audio ??= new AudioContext();
+  if (audio.state === 'suspended') audio.resume();
+}
+function tono(ok: boolean) {
+  if (!audio) return;
+  const notas = ok ? [[1046, 0, 0.12]] : [[330, 0, 0.14], [262, 0.18, 0.22]];
+  for (const [f, ini, dur] of notas) {
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, audio.currentTime + ini);
+    g.gain.exponentialRampToValueAtTime(0.25, audio.currentTime + ini + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + ini + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(audio.currentTime + ini);
+    o.stop(audio.currentTime + ini + dur + 0.02);
+  }
+}
+
+type Pantalla = ResultadoAcceso | { estado: 'sinred'; codigo: string; entrada: null };
+
+/** Igual que el servidor: acepta la URL del QR o el código con o sin guion. */
+const normalizar = (v: string) => (v.match(/[?&]c=([A-Za-z0-9-]+)/)?.[1] ?? v).replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 16);
 
 type Lector = (v: HTMLVideoElement) => Promise<string | null>;
 
@@ -34,7 +68,8 @@ async function crearLector(): Promise<Lector> {
   const c = document.createElement('canvas');
   const g = c.getContext('2d', { willReadFrequently: true })!;
   return async (v) => {
-    const lado = Math.min(v.videoWidth, v.videoHeight, 720);
+    // 480 px basta para un QR enfocado en el recuadro y lee más rápido en iPhone.
+    const lado = Math.min(v.videoWidth, v.videoHeight, 480);
     if (!lado) return null;
     c.width = c.height = lado;
     g.drawImage(v, (v.videoWidth - lado) / 2, (v.videoHeight - lado) / 2, lado, lado, 0, 0, lado, lado);
@@ -47,6 +82,7 @@ function Login({ onOk }: { onOk: () => void }) {
   const [error, setError] = useState('');
   async function entrar(e: FormEvent) {
     e.preventDefault();
+    activarSonido(); // el navegador solo permite sonido tras un toque del usuario
     setError('');
     try {
       await api('login', { pin });
@@ -72,22 +108,41 @@ function Login({ onOk }: { onOk: () => void }) {
   );
 }
 
-const TITULOS: Record<ResultadoAcceso['estado'], string> = {
+const TITULOS: Record<Pantalla['estado'], string> = {
   ok: 'Acceso válido',
   usado: 'Entrada ya utilizada',
   invalido: 'Código no válido',
   deshecho: 'Ingreso anulado',
+  sinred: 'Sin conexión',
 };
 
-function Resultado({ r, onSiguiente, onDeshacer }: { r: ResultadoAcceso; onSiguiente: () => void; onDeshacer: () => void }) {
+function Resultado({
+  r,
+  onSiguiente,
+  onDeshacer,
+  onReintentar,
+}: {
+  r: Pantalla;
+  onSiguiente: () => void;
+  onDeshacer: () => void;
+  onReintentar: () => void;
+}) {
   const e = r.entrada;
+  // Un «ya utilizada» de hace segundos suele ser el mismo ingreso reintentado tras un corte de señal.
+  const reciente = r.estado === 'usado' && e?.ingreso && Date.now() - new Date(e.ingreso).getTime() < 90_000;
   return (
     <div className={`pta-result pta-result--${r.estado}`} role="alert">
       <div className="pta-result__icon" aria-hidden="true">
-        {r.estado === 'ok' ? '✓' : r.estado === 'usado' ? '!' : r.estado === 'deshecho' ? '↺' : '✕'}
+        {r.estado === 'ok' ? '✓' : r.estado === 'usado' || r.estado === 'sinred' ? '!' : r.estado === 'deshecho' ? '↺' : '✕'}
       </div>
       <h2>{TITULOS[r.estado]}</h2>
-      {e ? (
+      {r.estado === 'sinred' ? (
+        <>
+          <p className="pta-result__name">No se pudo verificar la entrada.</p>
+          <p className="pta-result__when">Todavía no deje pasar: revise la señal y reintente, o use «Buscar / código».</p>
+          <p className="pta-result__code">{codigoLegible(r.codigo)}</p>
+        </>
+      ) : e ? (
         <>
           <p className="pta-result__type">{etiquetaEntrada(e.numero, e.acompanantes)}</p>
           <p className="pta-result__name">{e.numero === 0 ? e.nombre : `Invitado de ${e.nombre}`}</p>
@@ -116,14 +171,20 @@ function Resultado({ r, onSiguiente, onDeshacer }: { r: ResultadoAcceso; onSigui
             </div>
           </dl>
           {r.estado === 'usado' && e.ingreso && <p className="pta-result__when">Ingresó: {fechaHoraCorta(e.ingreso)}</p>}
+          {reciente && <p className="pta-result__when">Registrada hace unos segundos: si acaba de reintentar con esta misma persona, puede pasar.</p>}
           <p className="pta-result__code">{codigoLegible(e.codigo)}</p>
         </>
       ) : (
         <p className="pta-result__name">Este código no corresponde a ninguna entrada.</p>
       )}
       <div className="pta-result__actions">
-        <button className="pta-btn pta-btn--light" onClick={onSiguiente} autoFocus>
-          Escanear siguiente
+        {r.estado === 'sinred' && (
+          <button className="pta-btn pta-btn--light" onClick={onReintentar} autoFocus>
+            Reintentar
+          </button>
+        )}
+        <button className={`pta-btn ${r.estado === 'sinred' ? 'pta-btn--ghost' : 'pta-btn--light'}`} onClick={onSiguiente} autoFocus={r.estado !== 'sinred'}>
+          {r.estado === 'sinred' ? 'Cancelar' : 'Escanear siguiente'}
         </button>
         {r.estado === 'ok' && (
           <button className="pta-btn pta-btn--ghost" onClick={onDeshacer}>
@@ -211,7 +272,7 @@ export default function AccesoApp() {
   const [sesion, setSesion] = useState<'cargando' | 'no' | 'si'>('cargando');
   const [vista, setVista] = useState<'camara' | 'buscar'>('camara');
   const [resumen, setResumen] = useState({ total: 0, ingresados: 0 });
-  const [resultado, setResultado] = useState<ResultadoAcceso | null>(null);
+  const [resultado, setResultado] = useState<Pantalla | null>(null);
   const [errorCamara, setErrorCamara] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
@@ -236,17 +297,26 @@ export default function AccesoApp() {
   }, [actualizar]);
 
   const registrar = useCallback(
-    async (codigo: string) => {
+    async (leido: string) => {
+      const codigo = normalizar(leido);
+      if (!codigo) return;
       pausado.current = true;
       setOcupado(true);
       try {
         const r = await api<ResultadoAcceso>('ingreso', { codigo });
         navigator.vibrate?.(r.estado === 'ok' ? 80 : [60, 80, 60, 80, 160]);
+        tono(r.estado === 'ok');
         setResultado(r);
         actualizar();
       } catch (e) {
-        if ((e as { status?: number }).status === 401) setSesion('no');
-        else setResultado({ estado: 'invalido', entrada: null });
+        const status = (e as { status?: number }).status;
+        if (status === 401) setSesion('no');
+        else {
+          // Falla de red o del servidor: NUNCA se muestra como código inválido.
+          navigator.vibrate?.([60, 80, 60, 80, 160]);
+          tono(false);
+          setResultado({ estado: 'sinred', codigo, entrada: null });
+        }
       } finally {
         setOcupado(false);
       }
@@ -317,7 +387,7 @@ export default function AccesoApp() {
           <span style={{ width: `${pct}%` }} />
         </div>
         <nav className="pta-tabs">
-          <button className={vista === 'camara' ? 'is-active' : ''} onClick={() => setVista('camara')}>
+          <button className={vista === 'camara' ? 'is-active' : ''} onClick={() => (activarSonido(), setVista('camara'))}>
             Escanear
           </button>
           <button className={vista === 'buscar' ? 'is-active' : ''} onClick={() => setVista('buscar')}>
@@ -340,13 +410,19 @@ export default function AccesoApp() {
         <Resultado
           r={resultado}
           onSiguiente={() => {
+            activarSonido();
             setResultado(null);
             pausado.current = false;
           }}
+          onReintentar={() => resultado.estado === 'sinred' && registrar(resultado.codigo)}
           onDeshacer={async () => {
             if (!resultado.entrada) return;
-            setResultado(await api<ResultadoAcceso>('deshacer', { codigo: resultado.entrada.codigo }));
-            actualizar();
+            try {
+              setResultado(await api<ResultadoAcceso>('deshacer', { codigo: resultado.entrada.codigo }));
+              actualizar();
+            } catch {
+              alert('No se pudo anular el ingreso (sin conexión). Inténtelo de nuevo.');
+            }
           }}
         />
       )}
