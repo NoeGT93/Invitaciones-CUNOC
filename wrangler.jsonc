@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "invitaciones-cunoc",
+  "compatibility_date": "2026-11-01",
+  // Sitio 100 % estático: no hay Worker con código, solo Static Assets.
+  "assets": {
+    "directory": "./dist",
+    // Cualquier ruta sin archivo (p. ej. /invitacion/sergio-sum) devuelve index.html con estado 200.
+    "not_found_handling": "single-page-application"
+  }
+}

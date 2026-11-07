@@ -1,0 +1,30 @@
+{
+  "name": "invitaciones-cunoc",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Invitación web: Presentación de Seminario y Cierre de Maestría — MMEAG, CUNOC",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "generar-enlaces": "tsx scripts/generar-enlaces.ts"
+  },
+  "dependencies": {
+    "@fontsource-variable/cormorant-garamond": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9",
+    "vite": "^8.3.6",
+    "wrangler": "^4.158.0"
+  }
+}

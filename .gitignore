@@ -1,0 +1,10 @@
+node_modules
+dist
+.wrangler
+.dev.vars*
+*.log
+.DS_Store
+# Los enlaces contienen nombres de invitados: se generan localmente y no se versionan.
+generated/*
+!generated/.gitkeep
+.claude/
