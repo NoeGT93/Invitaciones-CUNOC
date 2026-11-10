@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { EntradaPublica, MaestranteAdmin } from '../data/tipos';
+import type { EntradaPublica, EstadoPago, MaestranteAdmin } from '../data/tipos';
 import { codigoLegible, etiquetaEntrada } from '../utils/entradas';
 import { fechaHoraCorta } from '../utils/formato';
 import { api } from './api';
 
-type Borrador = { id?: number; nombre: string; carne: string; grupo: string; acompanantes: string };
-const vacio: Borrador = { nombre: '', carne: '', grupo: '', acompanantes: '0' };
+type Borrador = { id?: number; nombre: string; carne: string; grupo: string; acompanantes: string; pago: EstadoPago };
+const vacio: Borrador = { nombre: '', carne: '', grupo: '', acompanantes: '0', pago: 'pagado' };
 
 /** Convierte filas pegadas desde Excel/Sheets (tabulador, punto y coma o coma). */
 function leerFilas(texto: string) {
@@ -15,12 +15,12 @@ function leerFilas(texto: string) {
     .filter(Boolean)
     .map((l) => l.split(l.includes('\t') ? '\t' : l.includes(';') ? ';' : ',').map((c) => c.trim()))
     .filter((c) => !/^nombre$/i.test(c[0])) // ignora encabezado
-    .map(([nombre, carne, grupo, acompanantes]) => ({ nombre, carne, grupo, acompanantes: acompanantes || '0' }));
+    .map(([nombre, carne, grupo, acompanantes, pago]) => ({ nombre, carne, grupo, acompanantes: acompanantes || '0', pago: pago || '' }));
 }
 
 function exportarCsv(lista: MaestranteAdmin[]) {
   const c = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const filas = [['Nombre', 'Carné', 'Grupo', 'Acompañantes', 'Entradas', 'Ingresados'], ...lista.map((m) => [m.nombre, m.carne, m.grupo, m.acompanantes, m.entradas, m.ingresados ?? 0])];
+  const filas = [['Nombre', 'Carné', 'Grupo', 'Acompañantes', 'Pago', 'Entradas', 'Ingresados'], ...lista.map((m) => [m.nombre, m.carne, m.grupo, m.acompanantes, m.pago === 'pagado' ? 'Pagado' : 'Pendiente', m.entradas, m.ingresados ?? 0])];
   const blob = new Blob(['﻿' + filas.map((f) => f.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'maestrantes-entradas.csv' });
   a.click();
@@ -93,6 +93,7 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
       maestrantes: l.length,
       sinCarne: l.filter((m) => !m.carne).length,
       generaron: l.filter((m) => m.entradas_generadas).length,
+      pendientes: l.filter((m) => m.pago === 'pendiente').length,
       entradas: l.reduce((s, m) => s + m.entradas, 0),
       ingresados: l.reduce((s, m) => s + (m.ingresados ?? 0), 0),
     };
@@ -151,11 +152,11 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
   /** Respaldo en papel para la puerta: todas las entradas con su código, por grupo. */
   async function listaPuerta() {
     try {
-      const filas = await api<{ nombre: string; carne: string | null; grupo: number | null; acompanantes: number; numero: number; codigo: string; ingreso: string | null }[]>('entradas');
+      const filas = await api<{ nombre: string; carne: string | null; grupo: number | null; acompanantes: number; numero: number; codigo: string; ingreso: string | null; pago: EstadoPago }[]>('entradas');
       const c = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
       const lineas = [
-        ['Grupo', 'Maestrante', 'Carné', 'Entrada', 'Código', 'Ingresó'],
-        ...filas.map((f) => [f.grupo, f.nombre, f.carne, etiquetaEntrada(f.numero, f.acompanantes), codigoLegible(f.codigo), fechaHoraCorta(f.ingreso)]),
+        ['Grupo', 'Maestrante', 'Carné', 'Pago', 'Entrada', 'Código', 'Ingresó'],
+        ...filas.map((f) => [f.grupo, f.nombre, f.carne, f.pago === 'pagado' ? 'Pagado' : 'PENDIENTE', etiquetaEntrada(f.numero, f.acompanantes), codigoLegible(f.codigo), fechaHoraCorta(f.ingreso)]),
       ];
       const blob = new Blob(['﻿' + lineas.map((l) => l.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'lista-puerta-entradas.csv' });
@@ -186,6 +187,24 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
     await api(`maestrantes/${m.id}/liberar`, { method: 'POST' }).catch(fallo);
     await cargar();
     if (abierto === m.id) setEntradas(await api<EntradaPublica[]>(`entradas/${m.id}`).catch(() => []));
+  }
+
+  /** Registra el pago: desde ese momento el maestrante puede generar sus entradas. */
+  async function marcarPago(m: MaestranteAdmin, pago: EstadoPago) {
+    const texto =
+      pago === 'pagado'
+        ? `¿Registrar el pago de ${m.nombre}? Podrá generar sus entradas de inmediato.`
+        : `¿Marcar el pago de ${m.nombre} como pendiente? No podrá generar entradas.`;
+    if (!confirm(texto)) return;
+    try {
+      await api(`maestrantes/${m.id}`, {
+        method: 'PUT',
+        body: { nombre: m.nombre, carne: m.carne, grupo: m.grupo, acompanantes: m.acompanantes, pago },
+      });
+      await cargar();
+    } catch (err) {
+      fallo(err);
+    }
   }
 
   async function reiniciarTodo() {
@@ -251,6 +270,10 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
           </dd>
         </div>
         <div className="adm-stat adm-stat--static adm-stat--declinado">
+          <dt>Pago pendiente</dt>
+          <dd>{stats.pendientes}</dd>
+        </div>
+        <div className="adm-stat adm-stat--static adm-stat--declinado">
           <dt>Sin carné</dt>
           <dd>{stats.sinCarne}</dd>
         </div>
@@ -279,15 +302,15 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
         <div className="adm-card">
           <h2>Cargar maestrantes desde una hoja de cálculo</h2>
           <p className="adm-muted">
-            Copie las columnas <strong>Nombre · Carné · Grupo · Acompañantes</strong> desde Excel o Google Sheets y péguelas aquí (una
-            persona por fila). Si el carné ya existe, se actualizan sus datos.
+            Copie las columnas <strong>Nombre · Carné · Grupo · Acompañantes · Pago</strong> desde Excel o Google Sheets y péguelas aquí
+            (una persona por fila). Pago: «Pagado» o «Pendiente»; si se deja vacío, no cambia. Si el carné ya existe, se actualizan sus datos.
           </p>
           <textarea
             className="adm-paste"
             rows={8}
             value={importar}
             onChange={(e) => setImportar(e.target.value)}
-            placeholder={'Noe Jeremías Escobar Bautista\t201812345\t1\t3\nAna Lucía Pérez\t201954321\t2\t2'}
+            placeholder={'Noe Jeremías Escobar Bautista\t201812345\t1\t3\tPagado\nAna Lucía Pérez\t201954321\t2\t2\tPendiente'}
           />
           <p className="adm-muted">{leerFilas(importar).length} fila(s) detectadas.</p>
           <div className="adm-form__actions">
@@ -322,6 +345,13 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
               <span>Acompañantes permitidos</span>
               <input type="number" min={0} max={10} required {...campo('acompanantes')} />
             </label>
+            <label className="adm-field">
+              <span>Cuota de cierre</span>
+              <select value={borrador.pago} onChange={(e) => setBorrador((b) => ({ ...(b ?? vacio), pago: e.target.value as EstadoPago }))}>
+                <option value="pagado">Pagado: puede generar entradas</option>
+                <option value="pendiente">Pendiente: no puede generar entradas</option>
+              </select>
+            </label>
           </div>
           <div className="adm-form__actions">
             <button type="button" className="adm-btn" onClick={() => setBorrador(null)}>
@@ -353,6 +383,7 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
                   {m.carne ? `Carné ${m.carne}` : <em className="adm-warn">Sin carné: no puede descargar entradas</em>}
                   {m.grupo ? ` · Grupo ${m.grupo}` : ''}
                 </span>
+                {m.pago === 'pendiente' && <span className="adm-badge adm-badge--declinado">Pago pendiente</span>}
               </div>
               <div className="adm-item__seen">
                 <span>
@@ -372,13 +403,22 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
                 <button
                   className="adm-chip"
                   onClick={() => (
-                    setBorrador({ id: m.id, nombre: m.nombre, carne: m.carne ?? '', grupo: m.grupo?.toString() ?? '', acompanantes: String(m.acompanantes) }),
+                    setBorrador({ id: m.id, nombre: m.nombre, carne: m.carne ?? '', grupo: m.grupo?.toString() ?? '', acompanantes: String(m.acompanantes), pago: m.pago }),
                     setImportar(null),
                     scrollTo({ top: 0, behavior: 'smooth' })
                   )}
                 >
                   Editar
                 </button>
+                {m.pago === 'pendiente' ? (
+                  <button className="adm-chip adm-chip--wa" onClick={() => marcarPago(m, 'pagado')}>
+                    Marcar pagado
+                  </button>
+                ) : (
+                  <button className="adm-chip" onClick={() => marcarPago(m, 'pendiente')} title="Bloquea la generación de entradas">
+                    Marcar pendiente
+                  </button>
+                )}
                 {m.entradas_generadas && (
                   <button className="adm-chip" onClick={() => liberar(m)}>
                     Liberar entradas

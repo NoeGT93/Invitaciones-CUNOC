@@ -150,6 +150,17 @@ y desactivado con `prefers-reduced-motion`.
 Los nombres de los invitados ya no viajan en el código del sitio: cada enlace solo recibe los datos de su
 propio invitado. La imagen para WhatsApp es general y nunca muestra nombres.
 
+## Pago de la cuota de cierre
+
+Cada maestrante tiene un estado de pago: **Pagado** o **Pendiente**.
+
+- Con **pago pendiente**, al escribir su carné ve una alerta de «Pago pendiente» y **no puede generar entradas**.
+  El servidor también lo bloquea (respuesta 402), aunque se intente saltar la página.
+- En el panel → Maestrantes y entradas: contador «Pago pendiente», insignia en cada uno y los botones
+  **«Marcar pagado»** / «Marcar pendiente». Al marcar pagado, puede generar sus entradas de inmediato.
+- La carga desde Excel acepta una 5.ª columna *Pago* («Pagado» / «Pendiente…»); vacía = no cambia.
+- Un maestrante que ya generó sus entradas conserva su validez aunque luego se marque pendiente.
+
 ## Lanzamiento y día del evento
 
 Probado con 70 maestrantes / 238 entradas: carga por lotes, generación y escaneo simultáneo desde dos

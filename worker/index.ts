@@ -323,7 +323,23 @@ async function entradasDe(db: D1Database, maestranteId: number): Promise<Entrada
   return results;
 }
 
-type FilaMaestrante = { id: number; nombre: string; grupo: number | null; acompanantes: number; entradas_generadas: string | null };
+type FilaMaestrante = {
+  id: number;
+  nombre: string;
+  grupo: number | null;
+  acompanantes: number;
+  entradas_generadas: string | null;
+  pago: 'pagado' | 'pendiente';
+};
+
+/** «PAGADO» / «PENDIENTE…» de la hoja de cuotas → estado; vacío = no cambia. */
+function pagoDe(v: unknown): 'pagado' | 'pendiente' | null {
+  if (v === undefined || v === null || v === '') return null;
+  const t = String(v).trim().toLowerCase();
+  if (t.startsWith('pagad')) return 'pagado';
+  if (t.startsWith('pendient')) return 'pendiente';
+  throw new HttpError(400, `Estado de pago no reconocido: «${v}» (use Pagado o Pendiente)`);
+}
 
 /** Busca al maestrante por carné (limitado por IP para impedir probar carnés en serie). */
 async function maestrantePorCarne(req: Request, env: Env) {
@@ -335,7 +351,7 @@ async function maestrantePorCarne(req: Request, env: Env) {
   if (!evento.entradasActivas) throw new HttpError(403, 'La generación de entradas aún no está disponible.');
   const carne = normalizarCarne((await cuerpo(req)).carne);
   if (carne.length < 4 || carne.length > 20) throw new HttpError(400, 'Escriba su número de carné.');
-  const m = await env.DB.prepare('SELECT id, nombre, grupo, acompanantes, entradas_generadas FROM maestrantes WHERE carne = ?')
+  const m = await env.DB.prepare('SELECT id, nombre, grupo, acompanantes, entradas_generadas, pago FROM maestrantes WHERE carne = ?')
     .bind(carne)
     .first<FilaMaestrante>();
   if (!m) {
@@ -348,12 +364,16 @@ async function maestrantePorCarne(req: Request, env: Env) {
 /** Paso 1: muestra nombre, grupo y acompañantes, sin revelar ningún código. */
 async function consultarEntradas(req: Request, env: Env) {
   const m = await maestrantePorCarne(req, env);
-  return json({ nombre: m.nombre, grupo: m.grupo, acompanantes: m.acompanantes, generadas: m.entradas_generadas });
+  return json({ nombre: m.nombre, grupo: m.grupo, acompanantes: m.acompanantes, generadas: m.entradas_generadas, pago: m.pago });
 }
 
 /** Paso 2: tras «Sí, soy yo», entrega los códigos UNA sola vez (atómico). */
 async function generarEntradas(req: Request, env: Env) {
   const m = await maestrantePorCarne(req, env);
+  // El servidor es quien bloquea: la alerta de la página no basta.
+  if (m.pago !== 'pagado') {
+    throw new HttpError(402, 'Su pago de la cuota de cierre aparece como pendiente. Comuníquese con la Junta Directiva; en cuanto se registre, podrá generar sus entradas.');
+  }
   const r = await env.DB.prepare(
     `UPDATE maestrantes SET entradas_generadas = ${AHORA} WHERE id = ? AND entradas_generadas IS NULL RETURNING entradas_generadas`,
   )
@@ -528,6 +548,7 @@ async function guardarMaestrante(db: D1Database, b: Record<string, unknown>, id?
   const carne = normalizarCarne(b.carne) || null;
   if (carne && (carne.length < 4 || carne.length > 20)) throw new HttpError(400, `Carné inválido: ${b.carne}`);
   const acompanantes = entero(b.acompanantes, 'Acompañantes', 10) ?? 0;
+  const pago = pagoDe(b.pago); // null = conservar el actual (o «pagado» si es nuevo)
   if (carne) {
     const otro = await db.prepare('SELECT id, nombre FROM maestrantes WHERE carne = ? AND id IS NOT ?').bind(carne, id ?? null).first<{ nombre: string }>();
     if (otro) throw new HttpError(409, `El carné ${carne} ya pertenece a ${otro.nombre}`);
@@ -537,19 +558,19 @@ async function guardarMaestrante(db: D1Database, b: Record<string, unknown>, id?
     // Si cambió el número de acompañantes, el maestrante puede volver a generar su PDF (mismos códigos + los nuevos).
     await db
       .prepare(
-        `UPDATE maestrantes SET nombre = ?, grupo = ?, carne = ?,
+        `UPDATE maestrantes SET nombre = ?, grupo = ?, carne = ?, pago = COALESCE(?, pago),
            entradas_generadas = CASE WHEN acompanantes = ? THEN entradas_generadas ELSE NULL END,
            acompanantes = ? WHERE id = ?`,
       )
-      .bind(nombre, grupo, carne, acompanantes, acompanantes, id)
+      .bind(nombre, grupo, carne, pago, acompanantes, acompanantes, id)
       .run();
     return id;
   }
   let slug = slugify(nombre).slice(0, 40) || 'maestrante';
   if (await db.prepare('SELECT 1 FROM maestrantes WHERE slug = ?').bind(slug).first()) slug = `${slug}-${sufijo()}`;
   const fila = await db
-    .prepare('INSERT INTO maestrantes (slug, nombre, grupo, carne, acompanantes) VALUES (?, ?, ?, ?, ?) RETURNING id')
-    .bind(slug, nombre, grupo, carne, acompanantes)
+    .prepare('INSERT INTO maestrantes (slug, nombre, grupo, carne, acompanantes, pago) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
+    .bind(slug, nombre, grupo, carne, acompanantes, pago ?? 'pagado')
     .first<{ id: number }>();
   await sincronizarEntradas(db, fila!.id, acompanantes);
   return fila!.id;
@@ -681,7 +702,7 @@ async function admin(req: Request, env: Env, ruta: string) {
     if (m === 'GET' && !id) {
       const { results } = await db
         .prepare(
-          `SELECT m.nombre, m.carne, m.grupo, m.acompanantes, e.numero, e.codigo, e.ingreso
+          `SELECT m.nombre, m.carne, m.grupo, m.acompanantes, m.pago, e.numero, e.codigo, e.ingreso
            FROM entradas e JOIN maestrantes m ON m.id = e.maestrante_id
            ORDER BY m.grupo IS NULL, m.grupo, m.nombre, e.numero`,
         )

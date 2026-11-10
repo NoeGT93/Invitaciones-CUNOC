@@ -72,7 +72,11 @@ export interface ConsultaEntradas {
   acompanantes: number;
   /** Fecha en que ya se generaron; null si aún puede generarlas. */
   generadas: string | null;
+  /** Con pago pendiente no puede generar entradas. */
+  pago: EstadoPago;
 }
+
+export type EstadoPago = 'pagado' | 'pendiente';
 
 /** Respuesta de POST /api/entradas/generar */
 export interface MisEntradas {
@@ -88,6 +92,7 @@ export interface MaestranteAdmin extends Maestrante {
   carne: string | null;
   acompanantes: number;
   entradas_generadas: string | null;
+  pago: EstadoPago;
   entradas: number;
   ingresados: number | null;
 }

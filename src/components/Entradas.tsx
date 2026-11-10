@@ -195,6 +195,17 @@ export function Entradas() {
                     Consultar otro carné
                   </button>
                 </div>
+              ) : consulta.pago === 'pendiente' ? (
+                <div className="tickets__note-box tickets__note-box--alert" role="alert">
+                  <p className="tickets__note-title">Pago pendiente</p>
+                  <p>
+                    Su cuota de cierre aparece como <strong>pendiente de pago</strong>, por lo que aún no puede generar sus entradas.
+                    Comuníquese con la Junta Directiva para regularizarla; en cuanto se registre su pago, vuelva a esta sección con su carné.
+                  </p>
+                  <button type="button" className="link" onClick={reiniciar}>
+                    Consultar otro carné
+                  </button>
+                </div>
               ) : (
                 <>
                   <div className="tickets__note-box" role="note">

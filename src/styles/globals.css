@@ -1679,3 +1679,13 @@ h2 {
     top: 0.95rem;
   }
 }
+
+/* Pago pendiente: alerta clara, sin dramatismo */
+.tickets__note-box--alert {
+  border-left-color: #b4321f;
+  background: rgb(180 50 31 / 0.07);
+}
+
+.tickets__note-box--alert .tickets__note-title {
+  color: #9b2c1f;
+}
