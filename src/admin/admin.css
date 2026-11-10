@@ -482,10 +482,16 @@
 
 .adm-item {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 0.75rem 1.5rem;
-  align-items: center;
+  align-items: start;
   padding: 1rem 1.25rem;
+}
+
+/* Autoridades: las acciones van en su propia línea para no cruzarse con los datos en ningún ancho */
+.adm-item:not(.adm-item--compact) > .adm-row-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
 }
 
 .adm-item + .adm-item {
@@ -591,8 +597,15 @@
 }
 
 /* Maestrantes y entradas */
+/* Maestrante: datos | acompañantes arriba; las acciones en su propia línea, sin cruzarse nunca */
 .adm-item--m {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.adm-item--m > .adm-row-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
 }
 
 .adm-tickets {
@@ -855,6 +868,7 @@
 
 .adm-stepper span {
   min-width: 9.5rem;
+  white-space: nowrap;
   text-align: center;
   font-weight: 600;
   color: var(--text);
