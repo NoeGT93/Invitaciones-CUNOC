@@ -819,3 +819,43 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Control − / + de acompañantes */
+.adm-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--fs-small);
+}
+
+.adm-stepper button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--ivory);
+  color: var(--navy);
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.adm-stepper button:hover:not(:disabled) {
+  border-color: var(--navy);
+  background: #fff;
+}
+
+.adm-stepper button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.adm-stepper span {
+  min-width: 9.5rem;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+}

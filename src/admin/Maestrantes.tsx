@@ -79,6 +79,7 @@ export function Maestrantes({ onError }: { onError: (e: unknown) => void }) {
   const [error, setError] = useState('');
 
   const [progreso, setProgreso] = useState('');
+  const [cambiando, setCambiando] = useState<number | null>(null);
   const fallo = (e: unknown) => (onError(e), setError(e instanceof Error ? e.message : 'Error'));
   const cargar = () => api<MaestranteAdmin[]>('maestrantes').then(setLista).catch(fallo);
 
@@ -187,6 +188,36 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
     await api(`maestrantes/${m.id}/liberar`, { method: 'POST' }).catch(fallo);
     await cargar();
     if (abierto === m.id) setEntradas(await api<EntradaPublica[]>(`entradas/${m.id}`).catch(() => []));
+  }
+
+  /**
+   * Suma o quita un acompañante sin abrir el formulario. El servidor crea o elimina la entrada
+   * (nunca una ya usada) y, si ya tenía PDF, le permite generarlo de nuevo con los mismos códigos.
+   */
+  async function cambiarAcompanantes(m: MaestranteAdmin, delta: 1 | -1) {
+    const nuevo = m.acompanantes + delta;
+    const avisoPdf = m.entradas_generadas
+      ? `\n\nYa generó su PDF: deberá volver a generarlo desde la invitación con su carné (sus códigos actuales se mantienen${delta < 0 ? ', salvo el del acompañante que se quita' : ''}).`
+      : '';
+    const texto =
+      delta > 0
+        ? `¿Agregar un acompañante a ${m.nombre}? Quedará con ${nuevo}.${avisoPdf}`
+        : `¿Quitar un acompañante a ${m.nombre}? Quedará con ${nuevo}. La entrada del acompañante ${m.acompanantes} dejará de ser válida.${avisoPdf}`;
+    if (!confirm(texto)) return;
+    setCambiando(m.id);
+    setError('');
+    try {
+      await api(`maestrantes/${m.id}`, {
+        method: 'PUT',
+        body: { nombre: m.nombre, carne: m.carne, grupo: m.grupo, acompanantes: nuevo, pago: m.pago },
+      });
+      await cargar();
+      if (abierto === m.id) setEntradas(await api<EntradaPublica[]>(`entradas/${m.id}`).catch(() => []));
+    } catch (err) {
+      fallo(err);
+    } finally {
+      setCambiando(null);
+    }
   }
 
   /** Registra el pago: desde ese momento el maestrante puede generar sus entradas. */
@@ -386,9 +417,27 @@ Los códigos que aún no se han usado cambiarán (el PDF anterior dejará de ser
                 {m.pago === 'pendiente' && <span className="adm-badge adm-badge--declinado">Pago pendiente</span>}
               </div>
               <div className="adm-item__seen">
-                <span>
-                  1 + {m.acompanantes} acompañante{m.acompanantes === 1 ? '' : 's'}
-                </span>
+                <div className="adm-stepper" role="group" aria-label={`Acompañantes de ${m.nombre}`}>
+                  <button
+                    type="button"
+                    onClick={() => cambiarAcompanantes(m, -1)}
+                    disabled={m.acompanantes === 0 || cambiando === m.id}
+                    aria-label={`Quitar un acompañante a ${m.nombre}`}
+                  >
+                    −
+                  </button>
+                  <span aria-live="polite">
+                    {cambiando === m.id ? 'Guardando…' : `1 + ${m.acompanantes} acompañante${m.acompanantes === 1 ? '' : 's'}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => cambiarAcompanantes(m, 1)}
+                    disabled={m.acompanantes >= 10 || cambiando === m.id}
+                    aria-label={`Agregar un acompañante a ${m.nombre}`}
+                  >
+                    +
+                  </button>
+                </div>
                 <span className={m.entradas_generadas ? 'adm-ok' : 'adm-muted'}>
                   {m.entradas_generadas ? `PDF generado ${fechaHoraCorta(m.entradas_generadas)}` : 'Aún no genera su PDF'}
                 </span>
